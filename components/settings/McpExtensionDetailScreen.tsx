@@ -15,6 +15,7 @@ import {
   Text,
   View,
 } from "react-native";
+import * as Clipboard from "expo-clipboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MCPClient } from "../../modules/vm-webrtc/src/mcp_client/client";
 import type { Tool } from "../../modules/vm-webrtc/src/mcp_client/types";
@@ -48,6 +49,7 @@ export const McpExtensionDetailScreen: React.FC<McpExtensionDetailScreenProps> =
   const [toolsLoading, setToolsLoading] = useState(false);
   const [toolsError, setToolsError] = useState<string | null>(null);
   const [configureVisible, setConfigureVisible] = useState(false);
+  const [urlCopied, setUrlCopied] = useState(false);
 
   useEffect(() => {
     setCurrentExtension(extension);
@@ -159,6 +161,16 @@ export const McpExtensionDetailScreen: React.FC<McpExtensionDetailScreenProps> =
                 {currentExtension.serverUrl}
               </Text>
             </View>
+            <Pressable
+              style={({ pressed }) => [styles.copyButton, pressed && styles.copyButtonPressed]}
+              onPress={async () => {
+                await Clipboard.setStringAsync(currentExtension.serverUrl);
+                setUrlCopied(true);
+                setTimeout(() => setUrlCopied(false), 1500);
+              }}
+            >
+              <Text style={styles.copyButtonText}>{urlCopied ? "✓" : "⎘"}</Text>
+            </Pressable>
           </View>
 
           <View style={styles.enableRow}>
@@ -322,6 +334,21 @@ const styles = StyleSheet.create({
   infoBody: {
     flex: 1,
     gap: 4,
+  },
+  copyButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: "#F2F2F7",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  copyButtonPressed: {
+    opacity: 0.5,
+  },
+  copyButtonText: {
+    fontSize: 16,
+    color: "#636366",
   },
   extensionName: {
     fontSize: 17,
