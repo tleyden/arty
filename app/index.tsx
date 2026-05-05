@@ -41,7 +41,18 @@ import {
 } from "../lib/languagePreference";
 import { log } from "../lib/logger";
 import { loadMainPromptAddition } from "../lib/mainPrompt";
-import { getApiKey } from "../lib/secure-storage";
+import {
+  completeMcpOAuthFromCallbackUrl,
+  type McpOAuthPendingState,
+} from "../lib/mcp-oauth";
+import {
+  addMcpExtension,
+  clearMcpPendingOAuthSession,
+  getApiKey,
+  getMcpPendingOAuthSession,
+} from "../lib/secure-storage";
+import { DeviceEventEmitter } from "react-native";
+import { CONNECTOR_SETTINGS_CHANGED_EVENT } from "../modules/vm-webrtc/src/ToolkitManager";
 import {
   DEFAULT_TRANSCRIPTION_ENABLED,
   loadTranscriptionPreference,
@@ -142,12 +153,54 @@ export default function Index() {
   }, []);
 
   useEffect(() => {
+    const handleIncomingUrl = async (url: string) => {
+      log.info("[app] Linking url received", {}, { url });
+
+      if (!url.startsWith("vibemachine://mcp-oauth-callback")) return;
+
+      const params = new URLSearchParams(url.split("?")[1] ?? "");
+      const code = params.get("code");
+      if (!code) {
+        log.warn("[app] Linking: mcp-oauth-callback URL has no code param", {}, { url });
+        return;
+      }
+
+      const raw = await getMcpPendingOAuthSession();
+      if (!raw) {
+        log.warn("[app] Linking: no pending OAuth session found in storage");
+        return;
+      }
+
+      const pending = raw as McpOAuthPendingState;
+      log.info("[app] Linking: completing OAuth for extension", {}, {
+        extensionId: pending.extensionId,
+        extensionName: pending.extensionName,
+      });
+
+      try {
+        await completeMcpOAuthFromCallbackUrl(url, pending);
+        await addMcpExtension({
+          id: pending.extensionId,
+          name: pending.extensionName,
+          normalizedName: pending.extensionNormalizedName,
+          serverUrl: pending.extensionServerUrl,
+        });
+        DeviceEventEmitter.emit(CONNECTOR_SETTINGS_CHANGED_EVENT);
+        await clearMcpPendingOAuthSession();
+        log.info("[app] Linking: extension registered successfully", {}, { extensionName: pending.extensionName });
+        Alert.alert("Signed in successfully", `${pending.extensionName} is now connected.`);
+      } catch (err: any) {
+        log.error("[app] Linking: OAuth completion failed", {}, { message: err?.message });
+        Alert.alert("Sign-in failed", err?.message ?? "Could not complete authentication.");
+      }
+    };
+
     Linking.getInitialURL().then((url) => {
       log.info("[app] Linking.getInitialURL", {}, { url });
+      if (url) handleIncomingUrl(url);
     });
-    const sub = Linking.addEventListener("url", ({ url }) => {
-      log.info("[app] Linking url received", {}, { url });
-    });
+
+    const sub = Linking.addEventListener("url", ({ url }) => handleIncomingUrl(url));
     return () => sub.remove();
   }, []);
 

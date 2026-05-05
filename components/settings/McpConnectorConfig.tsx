@@ -167,9 +167,11 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
       } else if (result.statusCode === 401 && result.resourceMetadataUrl) {
         const id = existingExtension?.id ?? `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         setConnectingLabel("Opening sign-in…");
-        log.info("[mcp_connector] entering OAuth branch", {}, { id, serverUrl, resourceMetadataUrl: result.resourceMetadataUrl });
+        const allExtensions = await getMcpExtensions();
+        const normalizedName = uniqueNormalizedName(toNormalizedName(name), allExtensions, existingExtension?.id);
+        log.info("[mcp_connector] entering OAuth branch", {}, { id, serverUrl, normalizedName, resourceMetadataUrl: result.resourceMetadataUrl });
         try {
-          const oauthResult = await performMcpOAuthFlow(id, result.resourceMetadataUrl, name);
+          const oauthResult = await performMcpOAuthFlow(id, result.resourceMetadataUrl, name, { serverUrl, normalizedName });
           log.info("[mcp_connector] OAuth flow returned", {}, { oauthResult_type: oauthResult.type });
           if (oauthResult.type === "success") {
             await persistExtension(id, undefined, { preserveExistingToken: true });

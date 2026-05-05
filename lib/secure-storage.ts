@@ -920,6 +920,26 @@ export async function clearMcpAuthCredentials(id: string): Promise<void> {
   ]);
 }
 
+const MCP_PENDING_OAUTH_KEY = "VIBEMACHINE_MCP_PENDING_OAUTH";
+
+export async function saveMcpPendingOAuthSession(session: object): Promise<void> {
+  await AsyncStorage.setItem(MCP_PENDING_OAUTH_KEY, JSON.stringify(session));
+}
+
+export async function getMcpPendingOAuthSession(): Promise<Record<string, unknown> | null> {
+  const raw = await AsyncStorage.getItem(MCP_PENDING_OAUTH_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+export async function clearMcpPendingOAuthSession(): Promise<void> {
+  await AsyncStorage.removeItem(MCP_PENDING_OAUTH_KEY);
+}
+
 // Pydantic Logfire Enabled State Functions
 // Note: These use AsyncStorage, not SecureStore, so no caching is needed
 
