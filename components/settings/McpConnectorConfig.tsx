@@ -3,7 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   DeviceEventEmitter,
-  KeyboardAvoidingView,
+  Keyboard,
   Modal,
   Platform,
   Pressable,
@@ -62,6 +62,7 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
   const [pendingExtensionId, setPendingExtensionId] = useState<string | null>(null);
   const [callbackUrl, setCallbackUrl] = useState("");
   const [callbackError, setCallbackError] = useState("");
+  const [keyboardPadding, setKeyboardPadding] = useState(0);
 
   useEffect(() => {
     if (visible && existingExtension) {
@@ -84,6 +85,17 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
       setHasOAuthToken(false);
     }
   }, [visible, existingExtension]);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const show = Keyboard.addListener(showEvent, (e) => setKeyboardPadding(e.endCoordinates.height));
+    const hide = Keyboard.addListener(hideEvent, () => setKeyboardPadding(0));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
 
   const sanitizeToken = (value: string) => value.replace(/[\r\n\t ]+/g, "");
 
@@ -211,10 +223,7 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
       visible={visible}
       onRequestClose={resetAndClose}
     >
-      <KeyboardAvoidingView
-        style={styles.container}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-      >
+      <View style={[styles.container, { paddingBottom: keyboardPadding }]}>
         <View style={styles.header}>
           <Text style={styles.headerTitle}>
             {isEditing ? "Edit MCP Extension" : "Add MCP Extension"}
@@ -225,6 +234,7 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
         >
           {pendingOAuth ? (
             <View style={styles.callbackSection}>
@@ -440,7 +450,7 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
             </Pressable>
           )}
         </View>
-      </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 };
