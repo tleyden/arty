@@ -88,6 +88,11 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
   }, [visible, existingExtension]);
 
   useEffect(() => {
+    log.info("[mcp_connector] mounted");
+    return () => { log.info("[mcp_connector] UNMOUNTED"); };
+  }, []);
+
+  useEffect(() => {
     log.info("[mcp_connector] visible changed", {}, { visible });
   }, [visible]);
 
@@ -173,6 +178,7 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
             setPendingExtensionId(id);
           }
         } catch (oauthError: any) {
+          log.error("[mcp_connector] oauthError caught", {}, { message: oauthError?.message });
           Alert.alert(
             "Authentication Failed",
             oauthError?.message ?? "OAuth sign-in failed.",

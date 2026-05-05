@@ -85,7 +85,21 @@ export async function performMcpOAuthFlow(
     {},
     { connector_name: connectorName },
   );
-  const result = await request.promptAsync(discovery);
+  // openOAuthBrowserAndAwaitRedirect — opens ASWebAuthenticationSession on iOS and
+  // waits for the redirect URI to be intercepted. Hangs if the session anchor is lost.
+  const browserTimeoutMs = 120_000;
+  const result = await Promise.race([
+    request.promptAsync(discovery),
+    new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error(`OAuth browser did not resolve after ${browserTimeoutMs / 1000}s`)),
+        browserTimeoutMs,
+      )
+    ),
+  ]).catch((err) => {
+    log.error("[mcp_oauth] promptAsync error or timeout", {}, { message: err?.message, connector_name: connectorName });
+    throw err;
+  });
 
   log.info(
     "[mcp_oauth] promptAsync returned",
