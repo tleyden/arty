@@ -853,7 +853,7 @@ export async function deleteMcpExtension(id: string): Promise<void> {
   const existing = await getMcpExtensions();
   await saveMcpExtensions(existing.filter((e) => e.id !== id));
   await deleteMcpBearerToken(id);
-  await deleteMcpOAuthData(id);
+  await clearMcpAuthCredentials(id);
 }
 
 export async function saveMcpBearerToken(id: string, token: string): Promise<void> {
@@ -912,7 +912,7 @@ export async function getMcpTokenEndpoint(id: string): Promise<string | null> {
   }
 }
 
-async function deleteMcpOAuthData(id: string): Promise<void> {
+export async function clearMcpAuthCredentials(id: string): Promise<void> {
   await Promise.allSettled([
     deleteCachedValue(`${MCP_CLIENT_ID_PREFIX}${id}`),
     deleteCachedValue(`${MCP_REFRESH_TOKEN_PREFIX}${id}`),

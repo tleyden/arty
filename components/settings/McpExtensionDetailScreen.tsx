@@ -21,6 +21,8 @@ import { MCPClient } from "../../modules/vm-webrtc/src/mcp_client/client";
 import type { Tool } from "../../modules/vm-webrtc/src/mcp_client/types";
 import {
   addMcpExtension,
+  clearMcpAuthCredentials,
+  deleteMcpBearerToken,
   deleteMcpExtension,
   getMcpBearerToken,
   type McpExtensionRecord,
@@ -124,6 +126,39 @@ export const McpExtensionDetailScreen: React.FC<McpExtensionDetailScreenProps> =
       setCurrentExtension(updated);
       onUpdated(updated);
       fetchTools();
+    }
+  };
+
+  const handleResetAuth = () => {
+    const doReset = async () => {
+      await deleteMcpBearerToken(currentExtension.id);
+      await clearMcpAuthCredentials(currentExtension.id);
+      DeviceEventEmitter.emit(CONNECTOR_SETTINGS_CHANGED_EVENT);
+      setConfigureVisible(true);
+    };
+
+    if (Platform.OS === "ios") {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          title: `Reset auth for "${currentExtension.name}"?`,
+          message: "All saved credentials will be deleted. You'll need to sign in again.",
+          options: ["Cancel", "Reset Auth"],
+          destructiveButtonIndex: 1,
+          cancelButtonIndex: 0,
+        },
+        (buttonIndex) => {
+          if (buttonIndex === 1) doReset();
+        }
+      );
+    } else {
+      Alert.alert(
+        "Reset Auth",
+        `Delete all saved credentials for "${currentExtension.name}"? You'll need to sign in again.`,
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Reset Auth", style: "destructive", onPress: doReset },
+        ]
+      );
     }
   };
 
@@ -240,6 +275,12 @@ export const McpExtensionDetailScreen: React.FC<McpExtensionDetailScreenProps> =
             onPress={() => setConfigureVisible(true)}
           >
             <Text style={styles.configureButtonText}>Configure</Text>
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [styles.resetAuthButton, pressed && styles.resetAuthButtonPressed]}
+            onPress={handleResetAuth}
+          >
+            <Text style={styles.resetAuthButtonText}>Reset Auth</Text>
           </Pressable>
           <Pressable
             style={({ pressed }) => [styles.removeButton, pressed && styles.removeButtonPressed]}
@@ -478,6 +519,23 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: "#FFFFFF",
+  },
+  resetAuthButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#FF9500",
+  },
+  resetAuthButtonPressed: {
+    backgroundColor: "#FFF8F0",
+  },
+  resetAuthButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#FF9500",
   },
   removeButton: {
     flex: 1,
