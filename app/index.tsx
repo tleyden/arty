@@ -178,17 +178,22 @@ export default function Index() {
       });
 
       try {
+        log.info("[app] Linking: calling completeMcpOAuthFromCallbackUrl");
         await completeMcpOAuthFromCallbackUrl(url, pending);
+        log.info("[app] Linking: token exchange complete, saving extension record");
         await addMcpExtension({
           id: pending.extensionId,
           name: pending.extensionName,
           normalizedName: pending.extensionNormalizedName,
           serverUrl: pending.extensionServerUrl,
         });
-        DeviceEventEmitter.emit(CONNECTOR_SETTINGS_CHANGED_EVENT);
+        log.info("[app] Linking: extension record saved, clearing pending session");
         await clearMcpPendingOAuthSession();
+        log.info("[app] Linking: emitting CONNECTOR_SETTINGS_CHANGED_EVENT");
+        DeviceEventEmitter.emit(CONNECTOR_SETTINGS_CHANGED_EVENT);
         log.info("[app] Linking: extension registered successfully", {}, { extensionName: pending.extensionName });
         Alert.alert("Signed in successfully", `${pending.extensionName} is now connected.`);
+        log.info("[app] Linking: Alert shown");
       } catch (err: any) {
         log.error("[app] Linking: OAuth completion failed", {}, { message: err?.message });
         Alert.alert("Sign-in failed", err?.message ?? "Could not complete authentication.");
