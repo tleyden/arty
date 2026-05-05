@@ -189,6 +189,12 @@ const BUILD_OPTIONS: BuildOption[] = [
     command: "xed ios",
     description: "Open iOS project in Xcode",
   },
+  {
+    name: "Register New Device UDID",
+    flag: "register-device",
+    command: "bunx eas device:create",
+    description: "Register a new device UDID with EAS",
+  },
 ];
 
 async function executeCommand(command: string): Promise<number> {
