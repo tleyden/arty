@@ -32,6 +32,7 @@ import {
   type McpOAuthPendingState,
 } from "../../lib/mcp-oauth";
 import { CONNECTOR_SETTINGS_CHANGED_EVENT } from "../../modules/vm-webrtc/src/ToolkitManager";
+import { log } from "../../lib/logger";
 
 export interface McpConnectorConfigProps {
   visible: boolean;
@@ -87,6 +88,10 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
   }, [visible, existingExtension]);
 
   useEffect(() => {
+    log.info("[mcp_connector] visible changed", {}, { visible });
+  }, [visible]);
+
+  useEffect(() => {
     const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
     const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
     const show = Keyboard.addListener(showEvent, (e) => setKeyboardPadding(e.endCoordinates.height));
@@ -120,6 +125,7 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
     manualToken?: string,
     options?: { preserveExistingToken?: boolean },
   ) => {
+    log.info("[mcp_connector] persistExtension start", {}, { id, isEditing, hasManualToken: !!manualToken, preserveExistingToken: options?.preserveExistingToken });
     const allExtensions = await getMcpExtensions();
     const normalizedName = uniqueNormalizedName(toNormalizedName(name), allExtensions, existingExtension?.id);
     const record: McpExtensionRecord = { id, name, normalizedName, serverUrl };
@@ -130,7 +136,9 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
       await deleteMcpBearerToken(id);
     }
     DeviceEventEmitter.emit(CONNECTOR_SETTINGS_CHANGED_EVENT);
+    log.info("[mcp_connector] calling onSave", {}, { id });
     onSave?.(record);
+    log.info("[mcp_connector] calling resetAndClose", {}, { id });
     resetAndClose();
     Alert.alert(
       isEditing ? "Saved" : "Connected Successfully",
@@ -154,8 +162,10 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
       } else if (result.statusCode === 401 && result.resourceMetadataUrl) {
         const id = existingExtension?.id ?? `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         setConnectingLabel("Opening sign-in…");
+        log.info("[mcp_connector] entering OAuth branch", {}, { id, serverUrl, resourceMetadataUrl: result.resourceMetadataUrl });
         try {
           const oauthResult = await performMcpOAuthFlow(id, result.resourceMetadataUrl, name);
+          log.info("[mcp_connector] OAuth flow returned", {}, { oauthResult_type: oauthResult.type });
           if (oauthResult.type === "success") {
             await persistExtension(id, undefined, { preserveExistingToken: true });
           } else {
@@ -180,6 +190,7 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
         Alert.alert("Connection Failed", detail, [{ text: "OK" }]);
       }
     } finally {
+      log.info("[mcp_connector] handleSave finally — clearing isConnecting");
       setIsConnecting(false);
       setConnectingLabel("Connecting…");
     }
@@ -202,6 +213,7 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
   };
 
   const resetAndClose = () => {
+    log.info("[mcp_connector] resetAndClose");
     setName("");
     setServerUrl("");
     setBearerToken("");

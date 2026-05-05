@@ -87,6 +87,17 @@ export async function performMcpOAuthFlow(
   );
   const result = await request.promptAsync(discovery);
 
+  log.info(
+    "[mcp_oauth] promptAsync returned",
+    {},
+    {
+      result_type: result.type,
+      params: result.type === "success" ? result.params : undefined,
+      error: (result as any).error ?? undefined,
+      connector_name: connectorName,
+    },
+  );
+
   if (result.type === "success" && result.params.code) {
     log.info(
       "[mcp_oauth] Step 6: exchanging code for token",

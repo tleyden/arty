@@ -152,9 +152,9 @@ let toolkitGroupsPromise: Promise<ToolkitGroups> | null = null;
 async function reloadToolkitGroups(): Promise<void> {
   const startTime = Date.now();
   log.info(
-    "[ToolkitManager] Reloading toolkit groups due to connector settings change",
+    "[ToolkitManager] reloadToolkitGroups triggered",
     {},
-    {},
+    { caller: new Error().stack?.split("\n")[2]?.trim() },
   );
 
   // Clear all caches
@@ -823,6 +823,7 @@ async function fetchWithTokenRefresh(
 }
 
 async function loadUserMcpExtensionTools(): Promise<void> {
+  log.info("[ToolkitManager] loadUserMcpExtensionTools called", {}, { caller: new Error().stack?.split("\n")[2]?.trim() });
   const extensions = await getMcpExtensions().catch(() => [] as McpExtensionRecord[]);
   const enabled = extensions.filter((ext) => !ext.disabled);
 
@@ -884,6 +885,7 @@ async function loadUserMcpExtensionTools(): Promise<void> {
  * Internal function that actually fetches toolkit definitions.
  */
 async function fetchToolkitDefinitions(): Promise<ToolDefinition[]> {
+  log.info("[ToolkitManager] fetchToolkitDefinitions start", {}, { caller: new Error().stack?.split("\n")[2]?.trim() });
   dynamicToolkitDefinitionsByServer.clear();
 
   // Build static toolkit definitions if not cached
