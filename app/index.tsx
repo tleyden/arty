@@ -1,6 +1,6 @@
 import { Camera } from "expo-camera";
 import { useCallback, useEffect, useState } from "react";
-import { Alert, AppState, Platform, StyleSheet, Text, View } from "react-native";
+import { Alert, AppState, Linking, Platform, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AdvancedConfigurationSheet } from "../components/settings/AdvancedConfigurationSheet";
@@ -137,6 +137,16 @@ export default function Index() {
   useEffect(() => {
     const sub = AppState.addEventListener("change", (nextState) => {
       log.info("[app] AppState change", {}, { nextState });
+    });
+    return () => sub.remove();
+  }, []);
+
+  useEffect(() => {
+    Linking.getInitialURL().then((url) => {
+      log.info("[app] Linking.getInitialURL", {}, { url });
+    });
+    const sub = Linking.addEventListener("url", ({ url }) => {
+      log.info("[app] Linking url received", {}, { url });
     });
     return () => sub.remove();
   }, []);
