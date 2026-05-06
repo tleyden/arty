@@ -1,6 +1,6 @@
 import { Camera } from "expo-camera";
 import { useCallback, useEffect, useState } from "react";
-import { Alert, AppState, Linking, Platform, StyleSheet, Text, View } from "react-native";
+import { Alert, AppState, Platform, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AdvancedConfigurationSheet } from "../components/settings/AdvancedConfigurationSheet";
@@ -41,18 +41,7 @@ import {
 } from "../lib/languagePreference";
 import { log } from "../lib/logger";
 import { loadMainPromptAddition } from "../lib/mainPrompt";
-import {
-  completeMcpOAuthFromCallbackUrl,
-  type McpOAuthPendingState,
-} from "../lib/mcp-oauth";
-import {
-  addMcpExtension,
-  clearMcpPendingOAuthSession,
-  getApiKey,
-  getMcpPendingOAuthSession,
-} from "../lib/secure-storage";
-import { DeviceEventEmitter } from "react-native";
-import { CONNECTOR_SETTINGS_CHANGED_EVENT } from "../modules/vm-webrtc/src/ToolkitManager";
+import { getApiKey } from "../lib/secure-storage";
 import {
   DEFAULT_TRANSCRIPTION_ENABLED,
   loadTranscriptionPreference,
@@ -149,63 +138,6 @@ export default function Index() {
     const sub = AppState.addEventListener("change", (nextState) => {
       log.info("[app] AppState change", {}, { nextState });
     });
-    return () => sub.remove();
-  }, []);
-
-  useEffect(() => {
-    const handleIncomingUrl = async (url: string) => {
-      log.info("[app] Linking url received", {}, { url });
-
-      if (!url.startsWith("vibemachine://mcp-oauth-callback")) return;
-
-      const params = new URLSearchParams(url.split("?")[1] ?? "");
-      const code = params.get("code");
-      if (!code) {
-        log.warn("[app] Linking: mcp-oauth-callback URL has no code param", {}, { url });
-        return;
-      }
-
-      const raw = await getMcpPendingOAuthSession();
-      if (!raw) {
-        log.warn("[app] Linking: no pending OAuth session found in storage");
-        return;
-      }
-
-      const pending = raw as McpOAuthPendingState;
-      log.info("[app] Linking: completing OAuth for extension", {}, {
-        extensionId: pending.extensionId,
-        extensionName: pending.extensionName,
-      });
-
-      try {
-        log.info("[app] Linking: calling completeMcpOAuthFromCallbackUrl");
-        await completeMcpOAuthFromCallbackUrl(url, pending);
-        log.info("[app] Linking: token exchange complete, saving extension record");
-        await addMcpExtension({
-          id: pending.extensionId,
-          name: pending.extensionName,
-          normalizedName: pending.extensionNormalizedName,
-          serverUrl: pending.extensionServerUrl,
-        });
-        log.info("[app] Linking: extension record saved, clearing pending session");
-        await clearMcpPendingOAuthSession();
-        log.info("[app] Linking: emitting CONNECTOR_SETTINGS_CHANGED_EVENT");
-        DeviceEventEmitter.emit(CONNECTOR_SETTINGS_CHANGED_EVENT);
-        log.info("[app] Linking: extension registered successfully", {}, { extensionName: pending.extensionName });
-        Alert.alert("Signed in successfully", `${pending.extensionName} is now connected.`);
-        log.info("[app] Linking: Alert shown");
-      } catch (err: any) {
-        log.error("[app] Linking: OAuth completion failed", {}, { message: err?.message });
-        Alert.alert("Sign-in failed", err?.message ?? "Could not complete authentication.");
-      }
-    };
-
-    Linking.getInitialURL().then((url) => {
-      log.info("[app] Linking.getInitialURL", {}, { url });
-      if (url) handleIncomingUrl(url);
-    });
-
-    const sub = Linking.addEventListener("url", ({ url }) => handleIncomingUrl(url));
     return () => sub.remove();
   }, []);
 
@@ -689,6 +621,11 @@ export default function Index() {
       <McpExtensionsScreen
         visible={mcpExtensionsVisible}
         onClose={() => setMcpExtensionsVisible(false)}
+        onBeforeBrowserOpen={() => {
+          setMcpExtensionsVisible(false);
+          setMenuVisible(false);
+        }}
+        onNeedsManualCallback={() => setMcpExtensionsVisible(true)}
       />
       <ConfigureApiKeyScreen
         visible={apiKeyConfigVisible}

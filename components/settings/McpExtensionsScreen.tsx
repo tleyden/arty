@@ -22,11 +22,15 @@ import { McpExtensionDetailScreen } from "./McpExtensionDetailScreen";
 export interface McpExtensionsScreenProps {
   visible: boolean;
   onClose: () => void;
+  onBeforeBrowserOpen?: () => void;
+  onNeedsManualCallback?: () => void;
 }
 
 export const McpExtensionsScreen: React.FC<McpExtensionsScreenProps> = ({
   visible,
   onClose,
+  onBeforeBrowserOpen,
+  onNeedsManualCallback,
 }) => {
   const insets = useSafeAreaInsets();
   const [extensions, setExtensions] = useState<McpExtensionRecord[]>([]);
@@ -165,6 +169,14 @@ export const McpExtensionsScreen: React.FC<McpExtensionsScreenProps> = ({
           setAddVisible(false);
           loadExtensions();
         }}
+        onBeforeBrowserOpen={() => {
+          setAddVisible(false);
+          onBeforeBrowserOpen?.();
+        }}
+        onNeedsManualCallback={() => {
+          setAddVisible(true);
+          onNeedsManualCallback?.();
+        }}
       />
 
       {detailExtension && (
@@ -184,6 +196,14 @@ export const McpExtensionsScreen: React.FC<McpExtensionsScreenProps> = ({
         onSave={() => {
           setReauthExtension(null);
           loadExtensions();
+        }}
+        onBeforeBrowserOpen={() => {
+          setReauthExtension(null);
+          onBeforeBrowserOpen?.();
+        }}
+        onNeedsManualCallback={() => {
+          setReauthExtension(reauthExtension);
+          onNeedsManualCallback?.();
         }}
       />
     </Modal>

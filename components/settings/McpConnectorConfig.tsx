@@ -39,6 +39,8 @@ export interface McpConnectorConfigProps {
   onClose: () => void;
   existingExtension?: McpExtensionRecord;
   onSave?: (updated?: McpExtensionRecord) => void;
+  onBeforeBrowserOpen?: () => void;
+  onNeedsManualCallback?: () => void;
 }
 
 export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
@@ -46,6 +48,8 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
   onClose,
   existingExtension,
   onSave,
+  onBeforeBrowserOpen,
+  onNeedsManualCallback,
 }) => {
   const isEditing = !!existingExtension;
 
@@ -171,6 +175,7 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
         const normalizedName = uniqueNormalizedName(toNormalizedName(name), allExtensions, existingExtension?.id);
         log.info("[mcp_connector] entering OAuth branch", {}, { id, serverUrl, normalizedName, resourceMetadataUrl: result.resourceMetadataUrl });
         try {
+          onBeforeBrowserOpen?.();
           const oauthResult = await performMcpOAuthFlow(id, result.resourceMetadataUrl, name, { serverUrl, normalizedName });
           log.info("[mcp_connector] OAuth flow returned", {}, { oauthResult_type: oauthResult.type });
           if (oauthResult.type === "success") {
@@ -178,6 +183,7 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
           } else {
             setPendingOAuth(oauthResult.pendingState);
             setPendingExtensionId(id);
+            onNeedsManualCallback?.();
           }
         } catch (oauthError: any) {
           log.error("[mcp_connector] oauthError caught", {}, { message: oauthError?.message });

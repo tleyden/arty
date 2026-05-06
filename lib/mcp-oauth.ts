@@ -7,13 +7,11 @@ import {
 } from "../modules/vm-webrtc/src/mcp_client/extensions";
 import { log } from "./logger";
 import {
-  clearMcpPendingOAuthSession,
   getMcpClientId,
   getMcpRefreshToken,
   getMcpTokenEndpoint,
   saveMcpBearerToken,
   saveMcpClientId,
-  saveMcpPendingOAuthSession,
   saveMcpRefreshToken,
   saveMcpTokenEndpoint,
 } from "./secure-storage";
@@ -24,8 +22,6 @@ export interface McpOAuthPendingState {
   redirectUri: string;
   clientId: string;
   tokenEndpoint: string;
-  // Extension record fields — needed by the Linking handler to register the extension
-  // when ASWebAuthenticationSession drops the callback on iOS
   extensionName: string;
   extensionServerUrl: string;
   extensionNormalizedName: string;
@@ -99,20 +95,12 @@ export async function performMcpOAuthFlow(
     extensionNormalizedName: extensionInfo?.normalizedName ?? "",
   };
 
-  // Save pending state before opening the browser so the Linking handler in app/index.tsx
-  // can complete the flow if ASWebAuthenticationSession drops the callback (known iOS issue
-  // when presenting from nested formSheet modals).
-  await saveMcpPendingOAuthSession(pendingState);
-
   log.info(
     "[mcp_oauth] Step 5: opening browser for authorization",
     {},
     { connector_name: connectorName },
   );
 
-  // openOAuthBrowserAndAwaitRedirect — on iOS uses ASWebAuthenticationSession.
-  // May hang indefinitely if the session anchor is lost (nested modal bug).
-  // The Linking handler in app/index.tsx is the reliable fallback.
   const result = await request.promptAsync(discovery);
 
   log.info(
@@ -141,7 +129,6 @@ export async function performMcpOAuthFlow(
       extensionId,
       connectorName,
     );
-    await clearMcpPendingOAuthSession();
     return { type: "success", ...tokens };
   }
 
@@ -152,7 +139,6 @@ export async function performMcpOAuthFlow(
       {},
       { connector_name: connectorName, result },
     );
-    await clearMcpPendingOAuthSession();
     throw new Error(`OAuth error: ${detail}`);
   }
 
