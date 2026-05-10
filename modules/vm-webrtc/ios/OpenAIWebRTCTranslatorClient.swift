@@ -22,6 +22,7 @@ final class OpenAIWebRTCTranslatorClient: OpenAIWebRTCBase {
     // MARK: Translation-specific state
 
     private var outputLanguage: String = "en"
+    private var inputTranscriptionModel: String? = nil
 
     // MARK: Connection lifecycle
 
@@ -29,7 +30,8 @@ final class OpenAIWebRTCTranslatorClient: OpenAIWebRTCBase {
     func openConnection(
         baseURL: String?,
         audioOutput: AudioOutputPreference,
-        outputLanguage: String
+        outputLanguage: String,
+        inputTranscriptionModel: String? = nil
     ) async throws -> String {
         guard let resolvedApiKey = self.apiKey, !resolvedApiKey.isEmpty else {
             logger.log(
@@ -39,6 +41,7 @@ final class OpenAIWebRTCTranslatorClient: OpenAIWebRTCBase {
         }
 
         self.outputLanguage = outputLanguage.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.inputTranscriptionModel = inputTranscriptionModel
 
         emitModuleEvent(
             "onVoiceSessionStatus", payload: ["status_update": "Connecting to OpenAI..."])
@@ -126,13 +129,21 @@ final class OpenAIWebRTCTranslatorClient: OpenAIWebRTCBase {
     override func dataChannelDidOpen() {
         // Translation sessions need only output language; no instructions, voice, tools, or
         // turn detection. Input language is auto-detected by the model.
-        let session: [String: Any] = [
+        var session: [String: Any] = [
             "audio": ["output": ["language": outputLanguage]]
         ]
+        if let model = inputTranscriptionModel {
+            session["input_audio_transcription"] = ["model": model]
+        }
 
         logger.log(
             "[VmWebrtc][Translator] Sending translation session config",
-            attributes: logAttributes(for: .info, metadata: ["outputLanguage": outputLanguage]))
+            attributes: logAttributes(
+                for: .info,
+                metadata: [
+                    "outputLanguage": outputLanguage,
+                    "inputTranscriptionModel": inputTranscriptionModel ?? "disabled",
+                ]))
 
         _ = sendEvent(["type": "session.update", "session": session])
 

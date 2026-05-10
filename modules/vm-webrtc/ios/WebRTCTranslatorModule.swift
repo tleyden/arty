@@ -13,6 +13,9 @@ struct TranslationConnectionOptions: Record {
 
     @Field
     var outputLanguage: String
+
+    @Field
+    var inputTranscriptionModel: String?
 }
 
 public class WebRTCTranslatorModule: Module {
@@ -42,7 +45,8 @@ public class WebRTCTranslatorModule: Module {
             return try await self.translatorClient.openConnection(
                 baseURL: options.baseUrl,
                 audioOutput: pref,
-                outputLanguage: options.outputLanguage
+                outputLanguage: options.outputLanguage,
+                inputTranscriptionModel: options.inputTranscriptionModel
             )
         }
 

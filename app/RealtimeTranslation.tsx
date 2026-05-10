@@ -158,7 +158,7 @@ export function RealtimeTranslation({
     const sub = VmWebrtcTranslatorModule.addListener(
       "onTranslationInputTranscript",
       (payload: TranslationTranscriptEventPayload) => {
-        log.debug("Translation input delta", {}, { delta: payload.delta });
+        log.debug("🎤 → 📝 Source transcript delta", {}, { delta: payload.delta });
         setInputTranscript((prev) => {
           const sep = prev && !prev.endsWith(" ") && !payload.delta.startsWith(" ") ? " " : "";
           return prev + sep + payload.delta;
@@ -174,7 +174,7 @@ export function RealtimeTranslation({
     const sub = VmWebrtcTranslatorModule.addListener(
       "onTranslationOutputTranscript",
       (payload: TranslationTranscriptEventPayload) => {
-        log.debug("Translation output delta", {}, { delta: payload.delta });
+        log.debug("🌐 → 📝 Translation transcript delta", {}, { delta: payload.delta });
         setOutputTranscript((prev) => {
           const sep = prev && !prev.endsWith(" ") && !payload.delta.startsWith(" ") ? " " : "";
           return prev + sep + payload.delta;
