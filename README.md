@@ -147,10 +147,11 @@ bunx expo run:ios
 
 </details>
 
-<details>
-  <summary>## 📦 Expo Build</summary>
+## 📦 Expo Build
 
- 
+<details>
+  <summary>Build Steps</summary>
+
 
 ### Additional Deps
 
