@@ -143,7 +143,7 @@ export function RealtimeTranslation({
     const sub = VmWebrtcTranslatorModule.addListener(
       "onTranslationInputTranscript",
       (payload: TranslationTranscriptEventPayload) => {
-        log.debug("🎤 → 📝 Source transcript delta", {}, { delta: payload.delta });
+        log.debug("🎤 → 📝 Source transcript delta", {}, { delta: payload.delta, role: payload.role ?? "primary" });
         setInputTranscript((prev) => {
           const sep =
             prev && !prev.endsWith(" ") && !payload.delta.startsWith(" ")
@@ -162,7 +162,7 @@ export function RealtimeTranslation({
     const sub = VmWebrtcTranslatorModule.addListener(
       "onTranslationOutputTranscript",
       (payload: TranslationTranscriptEventPayload) => {
-        log.debug("🌐 → 📝 Translation transcript delta", {}, { delta: payload.delta });
+        log.debug("🌐 → 📝 Translation transcript delta", {}, { delta: payload.delta, role: payload.role ?? "primary" });
         setOutputTranscript((prev) => {
           const sep =
             prev && !prev.endsWith(" ") && !payload.delta.startsWith(" ")
@@ -272,17 +272,12 @@ export function RealtimeTranslation({
       );
 
       if (isBidirectional) {
-        // RCA marker: bidirectional is UI-only — the native layer only opens one stream.
-        // Stream[0] (outputLanguage) will open; stream[1] (bidirectionalLanguage) will NOT.
-        // Fix needed: pass isBidirectional + bidirectionalLanguage to openTranslationConnectionAsync
-        // and implement two concurrent WebRTC sessions in the native module.
-        log.warn(
-          "Bidirectional mode enabled but native layer opens only one stream — reverse translation will not work",
+        log.info(
+          "Bidirectional mode: opening two streams",
           {},
           {
-            openingStream: { index: 0, role: "primary", outputLanguage },
-            skippedStream: { index: 1, role: "secondary (reverse)", outputLanguage: bidirectionalLanguage },
-            fix: "native layer needs bidirectional support",
+            stream0: { role: "primary", outputLanguage },
+            stream1: { role: "reverse", outputLanguage: bidirectionalLanguage },
           },
         );
       }
@@ -303,6 +298,7 @@ export function RealtimeTranslation({
           ...(transcriptionEnabled && {
             inputTranscriptionModel: transcriptionModel,
           }),
+          ...(isBidirectional && bidirectionalLanguage && { bidirectionalLanguage }),
         },
       );
       log.info("Translation stream[0] resolved", {}, { role: "primary", outputLanguage, state });
@@ -327,7 +323,9 @@ export function RealtimeTranslation({
   }, [
     audioOutput,
     baseConnectionOptions,
+    bidirectionalLanguage,
     hasMicPermission,
+    isBidirectional,
     isConnecting,
     isSessionActive,
     outputLanguage,

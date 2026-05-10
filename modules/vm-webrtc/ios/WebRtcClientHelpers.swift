@@ -38,6 +38,12 @@ extension OpenAIWebRTCBase {
     }
 
     func configureAudioSession(for output: AudioOutputPreference) throws {
+        guard !skipAudioSession else {
+            logger.log(
+                "[VmWebrtc] Skipping audio session configuration (secondary session)",
+                attributes: logAttributes(for: .debug))
+            return
+        }
         let desiredRoute: OutputRoute = (output == .speakerphone) ? .speaker : .receiver
         let session = AVAudioSession.sharedInstance()
         self.logger.log(
@@ -177,6 +183,12 @@ extension OpenAIWebRTCBase {
     }
 
     func deactivateAudioSession() {
+        guard !skipAudioSession else {
+            logger.log(
+                "[VmWebrtc] Skipping audio session deactivation (secondary session)",
+                attributes: logAttributes(for: .debug))
+            return
+        }
         let session = AVAudioSession.sharedInstance()
         do {
             try session.setActive(false, options: [.notifyOthersOnDeactivation])

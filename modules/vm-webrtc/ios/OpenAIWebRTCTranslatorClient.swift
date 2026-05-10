@@ -23,6 +23,10 @@ final class OpenAIWebRTCTranslatorClient: OpenAIWebRTCBase {
 
     private var outputLanguage: String = "en"
     private var inputTranscriptionModel: String? = nil
+    private var noiseReductionType: String? = nil
+    // "primary" or "reverse" — logged and included in transcript events so the JS layer
+    // can distinguish which stream produced each delta.
+    var role: String = "primary"
 
     // MARK: Connection lifecycle
 
@@ -31,6 +35,7 @@ final class OpenAIWebRTCTranslatorClient: OpenAIWebRTCBase {
         baseURL: String?,
         audioOutput: AudioOutputPreference,
         outputLanguage: String,
+        noiseReductionType: String? = nil,
         inputTranscriptionModel: String? = nil
     ) async throws -> String {
         guard let resolvedApiKey = self.apiKey, !resolvedApiKey.isEmpty else {
@@ -42,6 +47,7 @@ final class OpenAIWebRTCTranslatorClient: OpenAIWebRTCBase {
 
         self.outputLanguage = outputLanguage.trimmingCharacters(in: .whitespacesAndNewlines)
         self.inputTranscriptionModel = inputTranscriptionModel
+        self.noiseReductionType = noiseReductionType
 
         emitModuleEvent(
             "onVoiceSessionStatus", payload: ["status_update": "Connecting to OpenAI..."])
@@ -51,8 +57,10 @@ final class OpenAIWebRTCTranslatorClient: OpenAIWebRTCBase {
             attributes: logAttributes(
                 for: .info,
                 metadata: [
+                    "role": self.role,
                     "outputLanguage": self.outputLanguage,
                     "audioOutput": audioOutput.rawValue,
+                    "noiseReductionType": self.noiseReductionType ?? "disabled",
                     "hasBaseURL": (baseURL?.isEmpty == false),
                 ]))
 
@@ -130,9 +138,19 @@ final class OpenAIWebRTCTranslatorClient: OpenAIWebRTCBase {
         // Translation sessions need only output language; no instructions, voice, tools, or
         // turn detection. Input language is auto-detected by the model.
         var audio: [String: Any] = ["output": ["language": outputLanguage]]
-        if let model = inputTranscriptionModel {
-            audio["input"] = ["transcription": ["model": model]]
+
+        // Build input config: noise_reduction and/or transcription model if set.
+        var inputConfig: [String: Any] = [:]
+        if let nr = noiseReductionType {
+            inputConfig["noise_reduction"] = ["type": nr]
         }
+        if let model = inputTranscriptionModel {
+            inputConfig["transcription"] = ["model": model]
+        }
+        if !inputConfig.isEmpty {
+            audio["input"] = inputConfig
+        }
+
         let session: [String: Any] = ["audio": audio]
 
         logger.log(
@@ -140,7 +158,9 @@ final class OpenAIWebRTCTranslatorClient: OpenAIWebRTCBase {
             attributes: logAttributes(
                 for: .info,
                 metadata: [
+                    "role": role,
                     "outputLanguage": outputLanguage,
+                    "noiseReductionType": noiseReductionType ?? "disabled",
                     "inputTranscriptionModel": inputTranscriptionModel ?? "disabled",
                 ]))
 
@@ -165,7 +185,7 @@ final class OpenAIWebRTCTranslatorClient: OpenAIWebRTCBase {
             if let delta = event["delta"] as? String {
                 Task { @MainActor in
                     self.emitModuleEvent(
-                        "onTranslationOutputTranscript", payload: ["delta": delta])
+                        "onTranslationOutputTranscript", payload: ["delta": delta, "role": self.role])
                 }
             }
 
@@ -173,7 +193,7 @@ final class OpenAIWebRTCTranslatorClient: OpenAIWebRTCBase {
             if let delta = event["delta"] as? String {
                 Task { @MainActor in
                     self.emitModuleEvent(
-                        "onTranslationInputTranscript", payload: ["delta": delta])
+                        "onTranslationInputTranscript", payload: ["delta": delta, "role": self.role])
                 }
             }
 
