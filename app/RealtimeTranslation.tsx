@@ -286,7 +286,8 @@ export function RealtimeTranslation({
 
   return (
     <View style={styles.content}>
-      <View style={styles.languagePickerContainer}>
+      {/* TOP: language picker — fixed, always visible */}
+      <View style={styles.topSection}>
         <Text style={styles.languagePickerLabel}>Translate from your native tongue to</Text>
         <View style={styles.languagePickerRow}>
           {featuredLanguages.map((lang) => {
@@ -399,21 +400,71 @@ export function RealtimeTranslation({
         </Pressable>
       </Modal>
 
-      <View style={styles.centerContent}>
-        <View style={styles.visualizerContainer}>
-          <MiniVisualizer
-            active={isSessionActive || frequencyBins.length > 0}
-            mode="user"
-            barCount={8}
-            height={80}
-            mirror={false}
-            gap={6}
-            radius={4}
-            smooth={0.75}
-            samples={frequencyBins}
-          />
-        </View>
+      {/* MIDDLE: flexible area shared by Advanced and Translation */}
+      <View style={styles.middleSection}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Toggle advanced customization"
+          onPress={() => setIsAdvancedExpanded((p) => !p)}
+          style={({ pressed }) => [
+            styles.advancedToggle,
+            pressed && styles.advancedTogglePressed,
+          ]}
+        >
+          <Text style={styles.advancedToggleText}>Advanced</Text>
+          <Text style={styles.advancedToggleChevron}>
+            {isAdvancedExpanded ? "⌃" : "⌄"}
+          </Text>
+        </Pressable>
 
+        {isAdvancedExpanded ? (
+          <View style={styles.advancedPanel}>
+            <SpeakerModeToggle
+              value={isSpeakerphone}
+              onValueChange={handleToggleSpeakerphone}
+            />
+            <MuteToggle value={isMuted} onValueChange={handleToggleMute} />
+          </View>
+        ) : null}
+
+        {showTranscripts ? (
+          <ScrollView
+            style={styles.translationScroll}
+            contentContainerStyle={styles.transcriptContent}
+          >
+            {inputTranscript ? (
+              <View style={styles.transcriptBlock}>
+                <Text style={styles.transcriptLabel}>You said</Text>
+                <Text style={styles.transcriptText}>{inputTranscript}</Text>
+              </View>
+            ) : null}
+            {outputTranscript ? (
+              <View style={styles.transcriptBlock}>
+                <Text style={styles.transcriptLabel}>Translation</Text>
+                <Text style={styles.transcriptText}>{outputTranscript}</Text>
+              </View>
+            ) : null}
+          </ScrollView>
+        ) : null}
+      </View>
+
+      {/* BOTTOM: status + button — fixed, always visible */}
+      <View style={styles.bottomSection}>
+        <MiniVisualizer
+          active={isSessionActive || frequencyBins.length > 0}
+          mode="user"
+          barCount={8}
+          height={56}
+          mirror={false}
+          gap={6}
+          radius={4}
+          smooth={0.75}
+          samples={frequencyBins}
+        />
+        <Text style={styles.statusText}>{statusText}</Text>
+        {!hasMicPermission && permissionError ? (
+          <Text style={styles.permissionWarning}>{permissionError}</Text>
+        ) : null}
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={
@@ -449,59 +500,6 @@ export function RealtimeTranslation({
             {buttonLabel}
           </Text>
         </Pressable>
-
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Toggle advanced customization"
-          onPress={() => setIsAdvancedExpanded((p) => !p)}
-          style={({ pressed }) => [
-            styles.advancedToggle,
-            pressed && styles.advancedTogglePressed,
-          ]}
-        >
-          <Text style={styles.advancedToggleText}>Advanced</Text>
-          <Text style={styles.advancedToggleChevron}>
-            {isAdvancedExpanded ? "⌃" : "⌄"}
-          </Text>
-        </Pressable>
-
-        {isAdvancedExpanded ? (
-          <View style={styles.advancedPanel}>
-            <SpeakerModeToggle
-              value={isSpeakerphone}
-              onValueChange={handleToggleSpeakerphone}
-            />
-            <MuteToggle value={isMuted} onValueChange={handleToggleMute} />
-          </View>
-        ) : null}
-
-        {!hasMicPermission && permissionError ? (
-          <Text style={styles.permissionWarning}>{permissionError}</Text>
-        ) : null}
-
-        {showTranscripts ? (
-          <ScrollView
-            style={styles.transcriptScroll}
-            contentContainerStyle={styles.transcriptContent}
-          >
-            {inputTranscript ? (
-              <View style={styles.transcriptBlock}>
-                <Text style={styles.transcriptLabel}>You said</Text>
-                <Text style={styles.transcriptText}>{inputTranscript}</Text>
-              </View>
-            ) : null}
-            {outputTranscript ? (
-              <View style={styles.transcriptBlock}>
-                <Text style={styles.transcriptLabel}>Translation</Text>
-                <Text style={styles.transcriptText}>{outputTranscript}</Text>
-              </View>
-            ) : null}
-          </ScrollView>
-        ) : null}
-      </View>
-
-      <View style={styles.statusContainer} pointerEvents="none">
-        <Text style={styles.statusText}>{statusText}</Text>
       </View>
     </View>
   );
@@ -512,20 +510,28 @@ export default RealtimeTranslation;
 const styles = StyleSheet.create({
   content: {
     flex: 1,
-    alignItems: "center",
     paddingTop: 16,
+    paddingHorizontal: 16,
   },
-  centerContent: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
+  topSection: {
     width: "100%",
+    marginBottom: 4,
   },
-  visualizerContainer: {
-    width: "85%",
-    maxWidth: 280,
-    marginBottom: 40,
+  middleSection: {
+    flex: 1,
+    width: "100%",
+    paddingTop: 8,
+  },
+  translationScroll: {
+    flex: 1,
+    width: "100%",
+    marginTop: 12,
+  },
+  bottomSection: {
+    width: "100%",
     alignItems: "center",
+    paddingBottom: 16,
+    gap: 8,
   },
   buttonBase: {
     borderRadius: 12,
@@ -593,7 +599,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E5E5EA",
     backgroundColor: "#F8F8F8",
-    marginTop: 32,
   },
   advancedTogglePressed: {
     backgroundColor: "#EFEFF4",
@@ -625,11 +630,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: "center",
   },
-  transcriptScroll: {
-    width: "100%",
-    maxHeight: 200,
-    marginTop: 24,
-  },
   transcriptContent: {
     gap: 16,
     paddingHorizontal: 4,
@@ -649,21 +649,10 @@ const styles = StyleSheet.create({
     color: "#1C1C1E",
     lineHeight: 22,
   },
-  statusContainer: {
-    position: "absolute",
-    bottom: 70,
-    left: 16,
-    right: 16,
-    alignItems: "center",
-  },
   statusText: {
     fontSize: 14,
     color: "#8E8E93",
     textAlign: "center",
-  },
-  languagePickerContainer: {
-    width: "100%",
-    marginBottom: 8,
   },
   languagePickerLabel: {
     fontSize: 11,
