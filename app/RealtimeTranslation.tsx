@@ -286,20 +286,6 @@ export function RealtimeTranslation({
 
   return (
     <View style={styles.content}>
-      <View style={styles.visualizerContainer}>
-        <MiniVisualizer
-          active={isSessionActive || frequencyBins.length > 0}
-          mode="user"
-          barCount={8}
-          height={80}
-          mirror={false}
-          gap={6}
-          radius={4}
-          smooth={0.75}
-          samples={frequencyBins}
-        />
-      </View>
-
       <View style={styles.languagePickerContainer}>
         <Text style={styles.languagePickerLabel}>Translate to</Text>
         <View style={styles.languagePickerRow}>
@@ -413,90 +399,106 @@ export function RealtimeTranslation({
         </Pressable>
       </Modal>
 
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={
-          isSessionActive ? "Stop translating" : "Start translating"
-        }
-        style={({ pressed }) => {
-          const base: any[] = [styles.buttonBase];
-          base.push(isSessionActive ? styles.stopButton : styles.startButton);
-          if (isButtonDisabled) {
-            base.push(styles.disabledButton);
-          } else {
-            base.push(styles.buttonShadow);
-            if (pressed) {
-              base.push(
-                isSessionActive
-                  ? styles.stopButtonPressed
-                  : styles.startButtonPressed,
-              );
-            }
+      <View style={styles.centerContent}>
+        <View style={styles.visualizerContainer}>
+          <MiniVisualizer
+            active={isSessionActive || frequencyBins.length > 0}
+            mode="user"
+            barCount={8}
+            height={80}
+            mirror={false}
+            gap={6}
+            radius={4}
+            smooth={0.75}
+            samples={frequencyBins}
+          />
+        </View>
+
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={
+            isSessionActive ? "Stop translating" : "Start translating"
           }
-          return base;
-        }}
-        onPress={isSessionActive ? handleStop : handleStart}
-        disabled={isButtonDisabled}
-      >
-        <Text
-          style={[
-            styles.buttonText,
-            isSessionActive ? styles.stopButtonText : styles.startButtonText,
-            isButtonDisabled && styles.disabledButtonText,
+          style={({ pressed }) => {
+            const base: any[] = [styles.buttonBase];
+            base.push(isSessionActive ? styles.stopButton : styles.startButton);
+            if (isButtonDisabled) {
+              base.push(styles.disabledButton);
+            } else {
+              base.push(styles.buttonShadow);
+              if (pressed) {
+                base.push(
+                  isSessionActive
+                    ? styles.stopButtonPressed
+                    : styles.startButtonPressed,
+                );
+              }
+            }
+            return base;
+          }}
+          onPress={isSessionActive ? handleStop : handleStart}
+          disabled={isButtonDisabled}
+        >
+          <Text
+            style={[
+              styles.buttonText,
+              isSessionActive ? styles.stopButtonText : styles.startButtonText,
+              isButtonDisabled && styles.disabledButtonText,
+            ]}
+          >
+            {buttonLabel}
+          </Text>
+        </Pressable>
+
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Toggle advanced customization"
+          onPress={() => setIsAdvancedExpanded((p) => !p)}
+          style={({ pressed }) => [
+            styles.advancedToggle,
+            pressed && styles.advancedTogglePressed,
           ]}
         >
-          {buttonLabel}
-        </Text>
-      </Pressable>
+          <Text style={styles.advancedToggleText}>Advanced</Text>
+          <Text style={styles.advancedToggleChevron}>
+            {isAdvancedExpanded ? "⌃" : "⌄"}
+          </Text>
+        </Pressable>
 
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Toggle advanced customization"
-        onPress={() => setIsAdvancedExpanded((p) => !p)}
-        style={({ pressed }) => [
-          styles.advancedToggle,
-          pressed && styles.advancedTogglePressed,
-        ]}
-      >
-        <Text style={styles.advancedToggleText}>Advanced</Text>
-        <Text style={styles.advancedToggleChevron}>
-          {isAdvancedExpanded ? "⌃" : "⌄"}
-        </Text>
-      </Pressable>
+        {isAdvancedExpanded ? (
+          <View style={styles.advancedPanel}>
+            <SpeakerModeToggle
+              value={isSpeakerphone}
+              onValueChange={handleToggleSpeakerphone}
+            />
+            <MuteToggle value={isMuted} onValueChange={handleToggleMute} />
+          </View>
+        ) : null}
 
-      {isAdvancedExpanded ? (
-        <View style={styles.advancedPanel}>
-          <SpeakerModeToggle
-            value={isSpeakerphone}
-            onValueChange={handleToggleSpeakerphone}
-          />
-          <MuteToggle value={isMuted} onValueChange={handleToggleMute} />
-        </View>
-      ) : null}
+        {!hasMicPermission && permissionError ? (
+          <Text style={styles.permissionWarning}>{permissionError}</Text>
+        ) : null}
 
-      {!hasMicPermission && permissionError ? (
-        <Text style={styles.permissionWarning}>{permissionError}</Text>
-      ) : null}
-
-      {showTranscripts ? (
-        <ScrollView
-          style={styles.transcriptScroll}
-          contentContainerStyle={styles.transcriptContent}
-        >
-          {inputTranscript ? (
-            <View style={styles.transcriptBlock}>
-              <Text style={styles.transcriptLabel}>You said</Text>
-              <Text style={styles.transcriptText}>{inputTranscript}</Text>
-            </View>
-          ) : null}
-          {outputTranscript ? (
-            <View style={styles.transcriptBlock}>
-              <Text style={styles.transcriptLabel}>Translation</Text>
-              <Text style={styles.transcriptText}>{outputTranscript}</Text>
-            </View>
-          ) : null}
-        </ScrollView>
-      ) : null}
+        {showTranscripts ? (
+          <ScrollView
+            style={styles.transcriptScroll}
+            contentContainerStyle={styles.transcriptContent}
+          >
+            {inputTranscript ? (
+              <View style={styles.transcriptBlock}>
+                <Text style={styles.transcriptLabel}>You said</Text>
+                <Text style={styles.transcriptText}>{inputTranscript}</Text>
+              </View>
+            ) : null}
+            {outputTranscript ? (
+              <View style={styles.transcriptBlock}>
+                <Text style={styles.transcriptLabel}>Translation</Text>
+                <Text style={styles.transcriptText}>{outputTranscript}</Text>
+              </View>
+            ) : null}
+          </ScrollView>
+        ) : null}
+      </View>
 
       <View style={styles.statusContainer} pointerEvents="none">
         <Text style={styles.statusText}>{statusText}</Text>
@@ -510,8 +512,14 @@ export default RealtimeTranslation;
 const styles = StyleSheet.create({
   content: {
     flex: 1,
+    alignItems: "center",
+    paddingTop: 16,
+  },
+  centerContent: {
+    flex: 1,
     justifyContent: "center",
     alignItems: "center",
+    width: "100%",
   },
   visualizerContainer: {
     width: "85%",
@@ -655,7 +663,7 @@ const styles = StyleSheet.create({
   },
   languagePickerContainer: {
     width: "100%",
-    marginBottom: 20,
+    marginBottom: 8,
   },
   languagePickerLabel: {
     fontSize: 11,
