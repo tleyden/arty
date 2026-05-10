@@ -4,7 +4,7 @@ import WebRTC
 /// Handles polling inbound RTP statistics and tracking remote speaking state.
 final class InboundAudioStatsMonitor {
     typealias LogEmitter = (
-        _ level: OpenAIWebRTCClient.NativeLogLevel,
+        _ level: NativeLogLevel,
         _ message: String,
         _ metadata: [String: Any]?
     ) -> Void

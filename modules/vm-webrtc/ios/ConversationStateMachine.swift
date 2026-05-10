@@ -913,7 +913,7 @@ actor ConversationStateMachine {
         fullMetadata["timestamp"] = ISO8601DateFormatter().string(from: Date())
 
         let levelEmoji: String
-        let logLevel: OpenAIWebRTCClient.NativeLogLevel
+        let logLevel: NativeLogLevel
         switch level {
         case .info:
             levelEmoji = ""

@@ -69,9 +69,9 @@ final class NativeLogger {
 
     // MARK: - Private Helpers
 
-    /// Convert LogfireTracingManager.Severity to OpenAIWebRTCClient.NativeLogLevel
+    /// Convert LogfireTracingManager.Severity to NativeLogLevel
     private func nativeLogLevel(from severity: LogfireTracingManager.Severity)
-        -> OpenAIWebRTCClient.NativeLogLevel
+        -> NativeLogLevel
     {
         switch severity {
         case .trace: return .trace
