@@ -10,7 +10,7 @@ final class InboundAudioStatsMonitor {
     ) -> Void
 
     typealias PeerConnectionProvider = () -> RTCPeerConnection?
-    typealias RemoteTrackIdentifierProvider = () -> String?
+    typealias RemoteTrackIdentifierProvider = () -> String
     typealias SpeakingActivityRecorder = () -> Void
 
     private struct Snapshot {
