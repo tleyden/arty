@@ -18,13 +18,16 @@ import { MuteToggle } from "../components/MuteToggle";
 import { SpeakerModeToggle } from "../components/SpeakerModeToggle";
 import { log } from "../lib/logger";
 import {
+  DEFAULT_OUTPUT_LANGUAGE,
   DEFAULT_TRANSCRIPT_FONT_SIZE,
   DEFAULT_TRANSLATION_IDLE_TIMEOUT_SECONDS,
+  loadOutputLanguage,
   loadTranscriptFontSize,
   loadTranslationIdleTimeoutSeconds,
   loadTranslationInputTranscriptionEnabled,
   loadTranslationInputTranscriptionModel,
   loadTranslationNoiseReductionType,
+  saveOutputLanguage,
 } from "../lib/translationSettings";
 import type {
   AudioMetricsEventPayload,
@@ -85,7 +88,7 @@ export function RealtimeTranslation({
   permissionError,
   transcriptFontSize: transcriptFontSizeProp,
 }: RealtimeTranslationProps) {
-  const [outputLanguage, setOutputLanguage] = useState("de");
+  const [outputLanguage, setOutputLanguage] = useState(DEFAULT_OUTPUT_LANGUAGE);
   const [languageModalVisible, setLanguageModalVisible] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isSessionActive, setIsSessionActive] = useState(false);
@@ -112,6 +115,7 @@ export function RealtimeTranslation({
       idleTimeoutSecondsRef.current = seconds;
     });
     loadTranscriptFontSize().then(setTranscriptFontSizeLocal);
+    loadOutputLanguage().then(setOutputLanguage);
   }, []);
 
   const resetIdleTimer = useCallback(() => {
@@ -413,7 +417,7 @@ export function RealtimeTranslation({
             return (
               <Pressable
                 key={lang.code}
-                onPress={() => !isSessionActive && setOutputLanguage(lang.code)}
+                onPress={() => { if (!isSessionActive) { setOutputLanguage(lang.code); saveOutputLanguage(lang.code); } }}
                 style={[
                   styles.langChip,
                   isSelected && styles.langChipSelected,
@@ -494,6 +498,7 @@ export function RealtimeTranslation({
                     key={lang.code}
                     onPress={() => {
                       setOutputLanguage(lang.code);
+                      saveOutputLanguage(lang.code);
                       setLanguageModalVisible(false);
                     }}
                     style={({ pressed }) => [

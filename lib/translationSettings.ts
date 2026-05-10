@@ -7,8 +7,10 @@ const INPUT_TRANSCRIPTION_ENABLED_KEY =
 const INPUT_TRANSCRIPTION_MODEL_KEY =
   "@vibemachine/translationInputTranscriptionModel";
 const TRANSCRIPT_FONT_SIZE_KEY = "@vibemachine/translationTranscriptFontSize";
+const OUTPUT_LANGUAGE_KEY = "@vibemachine/translationOutputLanguage";
 
 export const DEFAULT_TRANSLATION_IDLE_TIMEOUT_SECONDS = 60;
+export const DEFAULT_OUTPUT_LANGUAGE = "de";
 export const DEFAULT_TRANSLATION_NOISE_REDUCTION: NoiseReductionType =
   "disabled";
 export const DEFAULT_TRANSLATION_INPUT_TRANSCRIPTION_ENABLED = false;
@@ -138,6 +140,25 @@ export const loadTranscriptFontSize = async (): Promise<number> => {
 export const saveTranscriptFontSize = async (size: number): Promise<void> => {
   try {
     await AsyncStorage.setItem(TRANSCRIPT_FONT_SIZE_KEY, String(size));
+  } catch {
+    // Ignore persistence errors; UI will fall back to default.
+  }
+};
+
+// --- Output language ---
+
+export const loadOutputLanguage = async (): Promise<string> => {
+  try {
+    const stored = await AsyncStorage.getItem(OUTPUT_LANGUAGE_KEY);
+    return stored ?? DEFAULT_OUTPUT_LANGUAGE;
+  } catch {
+    return DEFAULT_OUTPUT_LANGUAGE;
+  }
+};
+
+export const saveOutputLanguage = async (code: string): Promise<void> => {
+  try {
+    await AsyncStorage.setItem(OUTPUT_LANGUAGE_KEY, code);
   } catch {
     // Ignore persistence errors; UI will fall back to default.
   }
