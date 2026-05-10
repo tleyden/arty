@@ -6,8 +6,7 @@
 **Features**
 
 * Realtime Voice Assistant, fully interruptible
-* Realtime Translator/Interpreter mode
-* Bring Your Own OpenAI API Key
+* Realtime Translator/Interpreter mode, including bi-directional translations.
 * Extensions/connectors: DeepWiki MCP, Google Drive, GitHub, Hugging Face Papers, Hacker News, Web Search
 * Generic MCP connector (experimental, still WIP)
 * Works with 🔈 speaker or 🎧 headphones
@@ -24,7 +23,7 @@
 **Requirements**
 
 * iOS - tested on ios 26, may work on earlier versions
-* OpenAI API Key
+* Bring Your Own OpenAI API Key
 
 ## 📱 Screenshots
 
