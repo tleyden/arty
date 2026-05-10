@@ -147,7 +147,10 @@ bunx expo run:ios
 
 </details>
 
-## 📦 Expo Build 
+<details>
+  <summary>## 📦 Expo Build</summary>
+
+ 
 
 ### Additional Deps
 
@@ -172,6 +175,9 @@ bunx eas credentials
 ```
 bun run wizard
 ```
+
+</details>
+
 
 ## ⚙️ Technical Details
 
