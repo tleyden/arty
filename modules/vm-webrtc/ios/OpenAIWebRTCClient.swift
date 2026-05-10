@@ -2,84 +2,19 @@ import AVFoundation
 import Foundation
 import WebRTC
 
-enum OpenAIWebRTCError: LocalizedError {
-    case invalidEndpoint
-    case missingLocalDescription
-    case missingAPIKey
-    case openAIRejected(Int)
-    case openAIResponseDecoding
-    case connectionTimeout
-    case connectionFailed(String)
-    case failedToAddAudioTrack
-    case missingInstructions
-
-    var errorDescription: String? {
-        switch self {
-        case .invalidEndpoint:
-            return "Failed to build the OpenAI Realtime endpoint URL."
-        case .missingLocalDescription:
-            return "The local WebRTC session description is missing after ICE gathering."
-        case .missingAPIKey:
-            return "An OpenAI API key must be set before starting a session."
-        case .openAIRejected(let status):
-            return "OpenAI Realtime endpoint rejected the SDP offer with status code \(status)."
-        case .openAIResponseDecoding:
-            return "Could not decode the SDP answer returned by OpenAI."
-        case .connectionTimeout:
-            return "Timed out waiting for the WebRTC connection to reach the connected state."
-        case .connectionFailed(let state):
-            return "WebRTC connection failed with state: \(state)."
-        case .failedToAddAudioTrack:
-            return "Could not attach the audio track to the peer connection."
-        case .missingInstructions:
-            return "Assistant instructions must be provided when starting a session."
-        }
-    }
-}
-
-final class OpenAIWebRTCClient: NSObject {
-
-    public enum NativeLogLevel: String {
-        case trace
-        case debug
-        case info
-        case warn
-        case error
-    }
-
-    enum AudioOutputPreference: String {
-        case handset
-        case speakerphone
-    }
-
-    enum TurnDetectionMode: String {
-        case server
-        case semantic
-    }
-
-    enum OutputRoute {
-        case speaker
-        case receiver
-    }
+final class OpenAIWebRTCClient: OpenAIWebRTCBase {
 
     enum Constants {
         static let idleTimeoutSeconds = WebRTCEventHandler.defaultIdleTimeout
     }
 
-    let factory: RTCPeerConnectionFactory
-    var peerConnection: RTCPeerConnection?
-    var audioTrack: RTCAudioTrack?
-    var remoteAudioTrackId: String?
-    var isOutgoingAudioMuted = false
-    var dataChannel: RTCDataChannel?
-    var iceGatheringContinuation: CheckedContinuation<Void, Error>?
-    var connectionContinuation: CheckedContinuation<String, Error>?
-    var connectionTimeoutTask: Task<Void, Never>?
-    var iceGatheringTimeoutTask: Task<Void, Never>?
-    var firstCandidateTimestamp: Date?
-    var iceGatheringStartTimestamp: Date?
-    var isMonitoringAudioRoute = false
-    var hasSentInitialSessionConfig = false
+    // MARK: Subclass-provided endpoint constants
+
+    override var defaultEndpoint: String { "https://api.openai.com/v1/realtime" }
+    override var defaultModel: String { "gpt-realtime" }
+
+    // MARK: Chat-specific stored properties
+
     var sessionInstructions: String
     private let defaultVoice = "cedar"
     var sessionVoice: String
@@ -90,12 +25,11 @@ final class OpenAIWebRTCClient: NSObject {
     private let retentionRatioScale: Int = 2
     private var disableCompaction: Bool = false
     var transcriptionEnabled: Bool = false
-    let logger = VmWebrtcLogging.logger
 
     // Reference to the github connector tool delegate
     weak var githubConnectorDelegate: BaseTool?
 
-    // Add: Reference to the GDrive connector tool delegate
+    // Reference to the GDrive connector tool delegates
     weak var gdriveConnectorDelegate: BaseTool?
     weak var gpt5GDriveFixerDelegate: BaseTool?
     weak var gpt5WebSearchDelegate: BaseTool?
@@ -107,68 +41,47 @@ final class OpenAIWebRTCClient: NSObject {
     let audioMixPlayer = AudioMixPlayer()
 
     var toolDefinitions: [[String: Any]] = []
-    private var apiKey: String?
     lazy var eventHandler = WebRTCEventHandler()
 
-    // Track whether lazy monitors have been initialized to prevent deinit issues
-    private var _inboundAudioMonitor: InboundAudioStatsMonitor?
-    var inboundAudioMonitor: InboundAudioStatsMonitor {
-        if let existing = _inboundAudioMonitor {
-            return existing
+    // MARK: Init / deinit
+
+    override init() {
+        self.sessionInstructions = ""
+        self.sessionVoice = "cedar"
+        self.sessionAudioSpeed = 1.0
+        super.init()
+
+        eventHandler.sendResponseCreateCallback = { [weak self] in
+            guard let self else { return false }
+            return self.sendEvent(["type": "response.create"])
         }
-        let monitor = InboundAudioStatsMonitor(
-            peerConnectionProvider: { [weak self] in
-                self?.peerConnection
-            },
-            remoteTrackIdentifierProvider: { [weak self] in
-                self?.remoteAudioTrackId
-            },
-            logEmitter: { [weak self] level, message, metadata in
-                guard let self else { return }
-                self.logger.log(
-                    "[VmWebrtc][\(level.rawValue.uppercased())] " + message,
-                    attributes: logAttributes(for: level, metadata: metadata)
-                )
-            },
-            speakingActivityRecorder: { [weak self] in
-                self?.eventHandler.recordRemoteSpeakingActivity()
-            }
-        )
-        _inboundAudioMonitor = monitor
-        return monitor
+
+        audioMixPlayer.isAssistantAudioStreamingCheck = { [weak self] in
+            guard let self else { return false }
+            return self.eventHandler.checkAssistantAudioStreaming()
+        }
     }
 
-    private var _outboundAudioMonitor: OutboundAudioStatsMonitor?
-    var outboundAudioMonitor: OutboundAudioStatsMonitor {
-        if let existing = _outboundAudioMonitor {
-            return existing
-        }
-        let monitor = OutboundAudioStatsMonitor(
-            peerConnectionProvider: { [weak self] in
-                self?.peerConnection
-            },
-            localTrackIdentifierProvider: { [weak self] in
-                self?.audioTrack?.trackId
-            },
-            logEmitter: { [weak self] level, message, metadata in
-                guard let self else { return }
-                self.logger.log(
-                    "[VmWebrtc][\(level.rawValue.uppercased())] " + message,
-                    attributes: logAttributes(for: level, metadata: metadata)
-                )
-            },
-            statsEventEmitter: { [weak self] metadata in
-                guard let self else { return }
-                Task { @MainActor in
-                    self.emitModuleEvent("onOutboundAudioStats", payload: metadata)
-                }
-            }
-        )
-        _outboundAudioMonitor = monitor
-        return monitor
+    deinit {
+        eventHandler.stopIdleMonitoring(reason: "deinit")
     }
 
-    private var moduleEventEmitter: ((String, [String: Any]) -> Void)?
+    // MARK: Virtual hook overrides
+
+    override func dataChannelDidOpen() {
+        sendInitialSessionConfiguration()
+    }
+
+    override func handleDataChannelMessage(_ event: [String: Any]) {
+        handleTokenUsageEventIfNeeded(event)
+        eventHandler.handle(event: event, context: makeEventHandlerContext())
+    }
+
+    override func recordRemoteSpeakingActivity() {
+        eventHandler.recordRemoteSpeakingActivity()
+    }
+
+    // MARK: Tool context
 
     func makeEventHandlerContext() -> WebRTCEventHandler.ToolContext {
         WebRTCEventHandler.ToolContext(
@@ -184,9 +97,7 @@ final class OpenAIWebRTCClient: NSObject {
             },
             emitModuleEvent: { [weak self] name, payload in
                 guard let self else { return }
-                Task { @MainActor in
-                    self.emitModuleEvent(name, payload: payload)
-                }
+                Task { @MainActor in self.emitModuleEvent(name, payload: payload) }
             },
             sendDataChannelMessage: { [weak self] event in
                 guard let self else { return }
@@ -195,87 +106,12 @@ final class OpenAIWebRTCClient: NSObject {
         )
     }
 
-    func sendDataChannelMessage(_ event: [String: Any]) {
-        guard let dataChannel = dataChannel, dataChannel.readyState == .open else {
-            logger.log(
-                "[VmWebrtc] Cannot send data channel message - channel not open",
-                attributes: logAttributes(
-                    for: .warn,
-                    metadata: [
-                        "channelState": dataChannel?.readyState.rawValue as Any,
-                        "eventType": event["type"] as Any,
-                    ])
-            )
-            return
-        }
-
-        do {
-            let jsonData = try JSONSerialization.data(withJSONObject: event, options: [])
-            let buffer = RTCDataBuffer(data: jsonData, isBinary: false)
-            let success = dataChannel.sendData(buffer)
-
-            if success {
-                var metadata: [String: Any] = [
-                    "eventType": event["type"] as Any,
-                    "dataSize": jsonData.count,
-                ]
-
-                // Add event_id if present
-                if let eventId = event["event_id"] as? String {
-                    metadata["eventId"] = eventId
-                }
-
-                // Add item_id to metadata if it's a delete event
-                if let eventType = event["type"] as? String, eventType == "conversation.item.delete"
-                {
-                    if let itemId = event["item_id"] as? String {
-                        metadata["itemId"] = itemId
-                    }
-                }
-
-                logger.log(
-                    "[VmWebrtc] Data channel message sent",
-                    attributes: logAttributes(for: .debug, metadata: metadata)
-                )
-            } else {
-                logger.log(
-                    "[VmWebrtc] Failed to send data channel message",
-                    attributes: logAttributes(
-                        for: .warn,
-                        metadata: [
-                            "eventType": event["type"] as Any
-                        ])
-                )
-            }
-        } catch {
-            logger.log(
-                "[VmWebrtc] Failed to serialize data channel message",
-                attributes: logAttributes(
-                    for: .error,
-                    metadata: [
-                        "eventType": event["type"] as Any,
-                        "error": error.localizedDescription,
-                    ])
-            )
-        }
-    }
-
-    func quantizedRetentionRatio(_ ratio: Double) -> NSNumber {
-        var decimalValue = Decimal(ratio)
-        var roundedValue = Decimal()
-        NSDecimalRound(&roundedValue, &decimalValue, retentionRatioScale, .plain)
-        return NSDecimalNumber(decimal: roundedValue)
-    }
-
-    func setEventEmitter(_ emitter: @escaping (String, [String: Any]) -> Void) {
-        moduleEventEmitter = emitter
-    }
+    // MARK: Delegate setters
 
     func setGithubConnectorDelegate(_ delegate: BaseTool) {
         self.githubConnectorDelegate = delegate
     }
 
-    // Add: Setter to attach GDrive connector tool delegate
     func setGDriveConnectorDelegate(_ delegate: BaseTool) {
         self.gdriveConnectorDelegate = delegate
     }
@@ -292,125 +128,18 @@ final class OpenAIWebRTCClient: NSObject {
         self.toolkitHelper = helper
     }
 
-    func setAPIKey(_ apiKey: String) {
-        let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmedKey.isEmpty == false else {
-            self.apiKey = nil
-            self.logger.log(
-                "[VmWebrtc] " + "Cleared OpenAI API key for WebRTC client",
-                attributes: logAttributes(
-                    for: .warn,
-                    metadata: [
-                        "reason": "empty_key"
-                    ])
-            )
-            return
-        }
-
-        self.apiKey = trimmedKey
-        self.logger.log(
-            "[VmWebrtc] " + "Stored OpenAI API key for WebRTC client",
-            attributes: logAttributes(
-                for: .debug,
-                metadata: [
-                    "keyLength": trimmedKey.count
-                ])
-        )
-    }
-
-    @MainActor
-    func setOutgoingAudioMuted(_ muted: Bool) {
-        isOutgoingAudioMuted = muted
-        if let audioTrack {
-            audioTrack.isEnabled = !muted
-            self.logger.log(
-                "[VmWebrtc] " + (muted ? "Outgoing audio muted" : "Outgoing audio unmuted"),
-                attributes: logAttributes(
-                    for: .info,
-                    metadata: [
-                        "hasAudioTrack": true
-                    ])
-            )
-        } else {
-            self.logger.log(
-                "[VmWebrtc] " + "Queued outgoing audio mute state",
-                attributes: logAttributes(
-                    for: .debug,
-                    metadata: [
-                        "muted": muted,
-                        "hasAudioTrack": false,
-                    ])
-            )
-        }
-    }
-
     func setToolDefinitions(_ definitions: [[String: Any]]) {
         self.toolDefinitions = definitions
         self.logger.log(
-            "[VmWebrtc] " + "Configured tool definitions from JavaScript",
-            attributes: logAttributes(
-                for: .debug,
-                metadata: [
-                    "definitions": definitions
-                ])
-        )
+            "[VmWebrtc] Configured tool definitions from JavaScript",
+            attributes: logAttributes(for: .debug, metadata: ["definitions": definitions]))
     }
 
-    let defaultEndpoint = "https://api.openai.com/v1/realtime"
-    let defaultModel = "gpt-realtime"
-    private let iceGatheringGracePeriod: TimeInterval = 0.5
-
-    override init() {
-        RTCInitializeSSL()
-        self.factory = RTCPeerConnectionFactory()
-        self.sessionInstructions = ""
-        self.sessionVoice = defaultVoice
-        self.sessionAudioSpeed = 1.0
-        super.init()
-
-        // Set up callback for sending queued response.create
-        eventHandler.sendResponseCreateCallback = { [weak self] in
-            guard let self = self else { return false }
-            return self.sendEvent(["type": "response.create"])
-        }
-
-        // Set up audio streaming check to prevent overlap
-        // AudioMixPlayer will check this before playing any audio
-        audioMixPlayer.isAssistantAudioStreamingCheck = { [weak self] in
-            guard let self = self else { return false }
-            return self.eventHandler.checkAssistantAudioStreaming()
-        }
-    }
-
-    deinit {
-        connectionTimeoutTask?.cancel()
-        iceGatheringTimeoutTask?.cancel()
-        // Only stop monitors if they were initialized (prevents lazy init during deinit)
-        _inboundAudioMonitor?.stop()
-        _outboundAudioMonitor?.stop()
-        peerConnection?.close()
-        if isMonitoringAudioRoute {
-            RTCAudioSession.sharedInstance().remove(self)
-            isMonitoringAudioRoute = false
-        }
-        eventHandler.stopIdleMonitoring(reason: "deinit")
-        RTCCleanupSSL()
-    }
-
-    @MainActor
-    func emitModuleEvent(_ name: String, payload: [String: Any]) {
-        guard let moduleEventEmitter else {
-            self.logger.log(
-                "[VmWebrtc] " + "No module event emitter configured; dropping event",
-                attributes: logAttributes(
-                    for: .debug,
-                    metadata: [
-                        "event": name
-                    ])
-            )
-            return
-        }
-        moduleEventEmitter(name, payload)
+    func quantizedRetentionRatio(_ ratio: Double) -> NSNumber {
+        var decimalValue = Decimal(ratio)
+        var roundedValue = Decimal()
+        NSDecimalRound(&roundedValue, &decimalValue, retentionRatioScale, .plain)
+        return NSDecimalNumber(decimal: roundedValue)
     }
 
     private func convertLogLevel(_ levelString: String) -> NativeLogLevel {
@@ -423,6 +152,8 @@ final class OpenAIWebRTCClient: NSObject {
         default: return .debug
         }
     }
+
+    // MARK: Connection lifecycle
 
     @MainActor
     func openConnection(
@@ -441,30 +172,21 @@ final class OpenAIWebRTCClient: NSObject {
         let sanitizedInstructions = instructions.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !sanitizedInstructions.isEmpty else {
             self.logger.log(
-                "[VmWebrtc] " + "Received empty instructions for OpenAI session",
+                "[VmWebrtc] Received empty instructions for OpenAI session",
                 attributes: logAttributes(for: .error))
             throw OpenAIWebRTCError.missingInstructions
         }
         sessionInstructions = sanitizedInstructions
 
-        guard let resolvedApiKey = self.apiKey, resolvedApiKey.isEmpty == false else {
+        guard let resolvedApiKey = self.apiKey, !resolvedApiKey.isEmpty else {
             self.logger.log(
-                "[VmWebrtc] " + "Missing OpenAI API key before starting connection",
-                attributes: logAttributes(
-                    for: .error,
-                    metadata: [
-                        "reason": "api_key_not_set"
-                    ])
-            )
+                "[VmWebrtc] Missing OpenAI API key before starting connection",
+                attributes: logAttributes(for: .error, metadata: ["reason": "api_key_not_set"]))
             throw OpenAIWebRTCError.missingAPIKey
         }
 
         let sanitizedVoice = voice?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let sanitizedVoice, !sanitizedVoice.isEmpty {
-            sessionVoice = sanitizedVoice
-        } else {
-            sessionVoice = defaultVoice
-        }
+        sessionVoice = (sanitizedVoice?.isEmpty == false) ? sanitizedVoice! : defaultVoice
 
         if let mode = vadMode?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
             let resolvedMode = TurnDetectionMode(rawValue: mode)
@@ -475,37 +197,26 @@ final class OpenAIWebRTCClient: NSObject {
         }
 
         if let audioSpeed, audioSpeed.isFinite {
-            let clampedSpeed = min(max(audioSpeed, 0.25), 4.0)
-            sessionAudioSpeed = clampedSpeed
+            sessionAudioSpeed = min(max(audioSpeed, 0.25), 4.0)
         } else {
             sessionAudioSpeed = 1.0
         }
 
-        // Store context control settings
         self.maxConversationTurns = maxConversationTurns
         self.retentionRatio = retentionRatio
         self.disableCompaction = disableCompaction ?? false
         self.transcriptionEnabled = transcriptionEnabled
 
-        // Configure conversation turn limit in event handler
         eventHandler.configureConversationTurnLimit(maxTurns: maxConversationTurns)
         eventHandler.configureDisableCompaction(disabled: self.disableCompaction)
         eventHandler.resetConversationTracking()
-
-        // Pass API key to event handler
         eventHandler.setApiKey(resolvedApiKey)
-
         eventHandler.stopIdleMonitoring(reason: "starting_new_connection")
 
-        // Emit initial status update
-        emitModuleEvent(
-            "onVoiceSessionStatus",
-            payload: [
-                "status_update": "Connecting to OpenAI..."
-            ])
+        emitModuleEvent("onVoiceSessionStatus", payload: ["status_update": "Connecting to OpenAI..."])
 
         self.logger.log(
-            "[VmWebrtc] " + "Starting OpenAI WebRTC connection",
+            "[VmWebrtc] Starting OpenAI WebRTC connection",
             attributes: logAttributes(
                 for: .info,
                 metadata: [
@@ -515,63 +226,25 @@ final class OpenAIWebRTCClient: NSObject {
                     "voice": sessionVoice,
                 ]))
 
-        self.logger.log(
-            "[VmWebrtc] " + "Resolved session instructions",
-            attributes: logAttributes(
-                for: .debug,
-                metadata: [
-                    "characterCount": sanitizedInstructions.count
-                ]))
-
-        self.logger.log(
-            "[VmWebrtc] " + "Resolved session voice",
-            attributes: logAttributes(
-                for: .debug,
-                metadata: [
-                    "hasCustom": sanitizedVoice?.isEmpty == false
-                ]))
-
-        self.logger.log(
-            "[VmWebrtc] " + "Resolved turn detection mode",
-            attributes: logAttributes(
-                for: .debug,
-                metadata: [
-                    "mode": turnDetectionMode.rawValue
-                ]))
-
-        self.logger.log(
-            "[VmWebrtc] " + "Resolved session audio speed",
-            attributes: logAttributes(
-                for: .debug,
-                metadata: [
-                    "speed": sessionAudioSpeed
-                ]))
-
         let endpointURL = try buildEndpointURL(baseURL: baseURL, model: model)
         self.logger.log(
-            "[VmWebrtc] " + "Resolved OpenAI endpoint",
-            attributes: logAttributes(
-                for: .debug, metadata: ["endpoint": endpointURL.absoluteString]))
+            "[VmWebrtc] Resolved OpenAI endpoint",
+            attributes: logAttributes(for: .debug, metadata: ["endpoint": endpointURL.absoluteString])
+        )
 
         try configureAudioSession(for: audioOutput)
         self.logger.log(
-            "[VmWebrtc] " + "Configured AVAudioSession for voice chat",
+            "[VmWebrtc] Configured AVAudioSession for voice chat",
             attributes: logAttributes(
-                for: .debug,
-                metadata: [
-                    "requestedOutput": audioOutput.rawValue
-                ]))
+                for: .debug, metadata: ["requestedOutput": audioOutput.rawValue]))
 
         emitModuleEvent(
-            "onVoiceSessionStatus",
-            payload: [
-                "status_update": "Setting up audio session..."
-            ])
+            "onVoiceSessionStatus", payload: ["status_update": "Setting up audio session..."])
 
         let connection = try makePeerConnection()
         firstCandidateTimestamp = nil
         self.logger.log(
-            "[VmWebrtc] " + "Peer connection prepared",
+            "[VmWebrtc] Peer connection prepared",
             attributes: logAttributes(
                 for: .debug,
                 metadata: [
@@ -580,29 +253,21 @@ final class OpenAIWebRTCClient: NSObject {
                 ]))
 
         emitModuleEvent(
-            "onVoiceSessionStatus",
-            payload: [
-                "status_update": "Establishing peer connection..."
-            ])
+            "onVoiceSessionStatus", payload: ["status_update": "Establishing peer connection..."])
 
         let offer = try await createOffer(connection: connection)
         self.logger.log(
-            "[VmWebrtc] " + "Created local SDP offer",
+            "[VmWebrtc] Created local SDP offer",
             attributes: logAttributes(for: .debug, metadata: ["hasSDP": !offer.sdp.isEmpty]))
         try await setLocalDescription(offer, for: connection)
-        self.logger.log(
-            "[VmWebrtc] " + "Local description applied", attributes: logAttributes(for: .debug))
+        self.logger.log("[VmWebrtc] Local description applied", attributes: logAttributes(for: .debug))
 
         emitModuleEvent(
-            "onVoiceSessionStatus",
-            payload: [
-                "status_update": "Gathering network candidates..."
-            ])
+            "onVoiceSessionStatus", payload: ["status_update": "Gathering network candidates..."])
 
-        let iceWait = try await waitForIceGathering(
-            on: connection, timeout: iceGatheringGracePeriod)
+        let iceWait = try await waitForIceGathering(on: connection, timeout: iceGatheringGracePeriod)
         self.logger.log(
-            "[VmWebrtc] " + "Continuing after ICE wait",
+            "[VmWebrtc] Continuing after ICE wait",
             attributes: logAttributes(
                 for: .debug,
                 metadata: [
@@ -613,47 +278,35 @@ final class OpenAIWebRTCClient: NSObject {
 
         guard let localSDP = connection.localDescription?.sdp else {
             self.logger.log(
-                "[VmWebrtc] " + "Local description missing after ICE gathering",
+                "[VmWebrtc] Local description missing after ICE gathering",
                 attributes: logAttributes(for: .error))
             throw OpenAIWebRTCError.missingLocalDescription
         }
 
         emitModuleEvent(
-            "onVoiceSessionStatus",
-            payload: [
-                "status_update": "Connecting to OpenAI endpoint..."
-            ])
+            "onVoiceSessionStatus", payload: ["status_update": "Connecting to OpenAI endpoint..."])
 
         let answerSDP = try await exchangeSDPWithOpenAI(
             apiKey: resolvedApiKey, endpointURL: endpointURL, offerSDP: localSDP)
         let remoteDescription = RTCSessionDescription(type: .answer, sdp: answerSDP)
         try await setRemoteDescription(remoteDescription, for: connection)
         self.logger.log(
-            "[VmWebrtc] " + "Remote description applied", attributes: logAttributes(for: .debug))
+            "[VmWebrtc] Remote description applied", attributes: logAttributes(for: .debug))
 
         emitModuleEvent(
-            "onVoiceSessionStatus",
-            payload: [
-                "status_update": "Finalizing connection..."
-            ])
+            "onVoiceSessionStatus", payload: ["status_update": "Finalizing connection..."])
 
         let state = try await waitForConnection(toReach: connection, timeout: 15)
         self.logger.log(
-            "[VmWebrtc] " + "OpenAI WebRTC connection flow finished",
+            "[VmWebrtc] OpenAI WebRTC connection flow finished",
             attributes: logAttributes(for: .info, metadata: ["state": state]))
 
         if state == "connected" || state == "completed" {
-            emitModuleEvent(
-                "onVoiceSessionStatus",
-                payload: [
-                    "status_update": "Connected"
-                ])
+            emitModuleEvent("onVoiceSessionStatus", payload: ["status_update": "Connected"])
 
             eventHandler.startIdleMonitoring(timeout: Constants.idleTimeoutSeconds) { [weak self] in
                 guard let self else { return }
-                Task { @MainActor in
-                    self.handleIdleTimeoutTriggered()
-                }
+                Task { @MainActor in self.handleIdleTimeoutTriggered() }
             }
         }
 
@@ -661,109 +314,224 @@ final class OpenAIWebRTCClient: NSObject {
     }
 
     @MainActor
-    func closeConnection() -> String {
+    override func closeConnection() -> String {
         self.logger.log(
-            "[VmWebrtc] " + "Closing OpenAI WebRTC connection",
+            "[VmWebrtc] Closing OpenAI WebRTC connection",
             attributes: logAttributes(for: .info))
 
         eventHandler.stopIdleMonitoring(reason: "connection_closed")
         eventHandler.resetConversationTracking()
         eventHandler.resetAudioStreamingState()
         eventHandler.resetFunctionCallState()
-
-        // SHADOW: Reset shadow state machine on connection close
         eventHandler.shadowObserve_reset(reason: "connection_closed")
-        stopInboundAudioStatsMonitoring()
-        stopOutboundAudioStatsMonitoring()
-        remoteAudioTrackId = nil
 
-        connectionTimeoutTask?.cancel()
-        connectionTimeoutTask = nil
-        iceGatheringTimeoutTask?.cancel()
-        iceGatheringTimeoutTask = nil
-
-        if let continuation = iceGatheringContinuation {
-            iceGatheringContinuation = nil
-            continuation.resume(returning: ())
-        }
-
-        if let continuation = connectionContinuation {
-            connectionContinuation = nil
-            continuation.resume(throwing: OpenAIWebRTCError.connectionFailed("closed"))
-        }
-
-        if let dataChannel {
-            dataChannel.delegate = nil
-            dataChannel.close()
-            self.logger.log(
-                "[VmWebrtc] " + "Data channel closed",
-                attributes: logAttributes(for: .debug, metadata: ["label": dataChannel.label]))
-        }
-        dataChannel = nil
-
-        if let audioTrack {
-            audioTrack.isEnabled = false
-        }
-        audioTrack = nil
-
-        let hadPeerConnection = peerConnection != nil
-        if let connection = peerConnection {
-            connection.delegate = nil
-            connection.close()
-            self.logger.log(
-                "[VmWebrtc] " + "Peer connection closed",
-                attributes: logAttributes(
-                    for: .debug,
-                    metadata: [
-                        "signalingState": connection.signalingState.rawValue,
-                        "iceState": stringValue(for: connection.iceConnectionState),
-                    ]))
-        }
-        peerConnection = nil
-
-        hasSentInitialSessionConfig = false
-
-        stopMonitoringAudioRouteChanges()
-        deactivateAudioSession()
-
-        self.logger.log(
-            "[VmWebrtc] " + "OpenAI WebRTC connection teardown completed",
-            attributes: logAttributes(
-                for: .info,
-                metadata: [
-                    "hadPeerConnection": hadPeerConnection
-                ]))
-
-        return "closed"
+        return super.closeConnection()
     }
 
+    // MARK: Session configuration (sent once data channel opens)
+
+    func sendInitialSessionConfiguration() {
+        guard !hasSentInitialSessionConfig else { return }
+
+        guard let dataChannel, dataChannel.readyState == .open else {
+            self.logger.log(
+                "[VmWebrtc] Data channel not ready for initial session configuration",
+                attributes: logAttributes(for: .warn, metadata: ["hasChannel": dataChannel != nil]))
+            return
+        }
+
+        let tools = buildTools()
+
+        if tools.isEmpty && !toolDefinitions.isEmpty {
+            self.logger.log(
+                "[VmWebrtc] Tool definitions provided but none matched configured delegates",
+                attributes: logAttributes(
+                    for: .warn, metadata: ["definitionCount": toolDefinitions.count]))
+        }
+
+        var session: [String: Any] = [
+            "instructions": sessionInstructions,
+            "voice": sessionVoice,
+            "tools": tools,
+        ]
+
+        switch turnDetectionMode {
+        case .semantic:
+            session["turn_detection"] = [
+                "type": "semantic_vad",
+                "create_response": true,
+                "eagerness": "low",
+            ]
+        case .server:
+            session["turn_detection"] = [
+                "type": "server_vad",
+                "create_response": true,
+            ]
+        }
+
+        if let ratio = retentionRatio {
+            session["truncation"] = [
+                "type": "retention_ratio",
+                "retention_ratio": quantizedRetentionRatio(ratio),
+            ]
+        }
+
+        if transcriptionEnabled {
+            session["input_audio_transcription"] = ["model": "whisper-1"]
+        }
+
+        if let prettyData = try? JSONSerialization.data(
+            withJSONObject: session, options: [.prettyPrinted]),
+            let prettyString = String(data: prettyData, encoding: .utf8)
+        {
+            self.logger.log(
+                "📑 [VmWebrtc] Sending session.update payload",
+                attributes: logAttributes(for: .debug, metadata: ["session": prettyString]))
+        } else {
+            self.logger.log(
+                "📑 [VmWebrtc] Sending session.update payload (fallback formatting)",
+                attributes: logAttributes(for: .debug, metadata: ["session": session]))
+        }
+
+        _ = sendEvent(["type": "session.update", "session": session])
+
+        Task { @MainActor in
+            self.emitModuleEvent(
+                "onVoiceSessionStatus", payload: ["status_update": "Started Voice Session"])
+        }
+
+        hasSentInitialSessionConfig = true
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(300)) { [weak self] in
+            guard let strongSelf = self else { return }
+            let trigger = "session_init"
+            if strongSelf.eventHandler.checkResponseInProgress() {
+                strongSelf.eventHandler.queueResponseCreate(trigger: trigger)
+            } else {
+                let sent = strongSelf.sendEvent(["type": "response.create"])
+                if sent { strongSelf.eventHandler.didSendResponseCreate(trigger: trigger) }
+            }
+        }
+    }
+
+    private func buildTools() -> [[String: Any]] {
+        let definitionsByName: [String: [String: Any]] = Dictionary(
+            uniqueKeysWithValues: toolDefinitions.compactMap { definition in
+                guard let name = definition["name"] as? String, !name.isEmpty else {
+                    self.logger.log(
+                        "[VmWebrtc] Encountered tool definition without a valid name. Skipping.",
+                        attributes: logAttributes(for: .warn))
+                    return nil
+                }
+                return (name, definition)
+            }
+        )
+
+        let legacyDelegates: [BaseTool?] = [
+            githubConnectorDelegate,
+            gdriveConnectorDelegate,
+            gpt5GDriveFixerDelegate,
+            gpt5WebSearchDelegate,
+        ]
+
+        let legacyTools = legacyDelegates.compactMap { delegate -> [String: Any]? in
+            guard let delegate else { return nil }
+            let toolName = delegate.toolName
+            if let definition = definitionsByName[toolName] { return definition }
+            self.logger.log(
+                "[VmWebrtc] No JavaScript-provided definition found for tool",
+                attributes: logAttributes(
+                    for: .warn,
+                    metadata: [
+                        "toolName": toolName,
+                        "availableDefinitions": Array(definitionsByName.keys),
+                    ]))
+            return nil
+        }
+
+        let legacyToolNames = Set(legacyDelegates.compactMap { $0?.toolName })
+        let gen2Tools = definitionsByName
+            .filter { !legacyToolNames.contains($0.key) }
+            .map { $0.value }
+
+        if !gen2Tools.isEmpty {
+            self.logger.log(
+                "[VmWebrtc] Found Gen2 toolkit tools",
+                attributes: logAttributes(
+                    for: .info,
+                    metadata: [
+                        "count": gen2Tools.count,
+                        "toolNames": gen2Tools.compactMap { $0["name"] as? String },
+                    ]))
+        }
+
+        return legacyTools + gen2Tools
+    }
+
+    // MARK: Token usage helper
+
+    private func handleTokenUsageEventIfNeeded(_ eventDict: [String: Any]) {
+        guard let type = eventDict["type"] as? String, type == "response.token_usage",
+            let usage = eventDict["usage"] as? [String: Any]
+        else { return }
+
+        var payload: [String: Any] = [:]
+
+        if let v = numberValue(from: usage["input_text_tokens"]) ?? numberValue(from: usage["inputText"]) { payload["inputText"] = v }
+        if let v = numberValue(from: usage["input_audio_tokens"]) ?? numberValue(from: usage["inputAudio"]) { payload["inputAudio"] = v }
+        if let v = numberValue(from: usage["output_text_tokens"]) ?? numberValue(from: usage["outputText"]) { payload["outputText"] = v }
+        if let v = numberValue(from: usage["output_audio_tokens"]) ?? numberValue(from: usage["outputAudio"]) { payload["outputAudio"] = v }
+        if let v = numberValue(from: usage["cached_input_tokens"]) ?? numberValue(from: usage["cachedInput"]) { payload["cachedInput"] = v }
+
+        guard !payload.isEmpty else {
+            self.logger.log(
+                "[VmWebrtc] 💵 Token usage event received without recognized counters",
+                attributes: logAttributes(for: .debug, metadata: ["usageKeys": Array(usage.keys)]))
+            return
+        }
+
+        if let responseId = eventDict["response_id"] as? String {
+            payload["responseId"] = responseId
+        }
+        payload["timestampMs"] = Int(Date().timeIntervalSince1970 * 1000)
+
+        self.logger.log(
+            "[VmWebrtc] Forwarding token usage event to JavaScript",
+            attributes: logAttributes(for: .debug, metadata: payload))
+
+        Task { @MainActor in emitModuleEvent("onTokenUsage", payload: payload) }
+    }
+
+    private func numberValue(from value: Any?) -> Int? {
+        switch value {
+        case let i as Int: return i
+        case let d as Double: return Int(d)
+        case let n as NSNumber: return n.intValue
+        case let s as String: return Int(s)
+        default: return nil
+        }
+    }
 }
 
 // MARK: - ToolCallResponder
 
 extension OpenAIWebRTCClient: ToolCallResponder {
     func sendToolCallResult(callId: String, result: String) {
-        // Generate client-controlled ID for this function call output (max 32 chars, no hyphens)
         let itemId = UUID().uuidString.replacingOccurrences(of: "-", with: "")
 
-        // SHADOW: Observe tool result about to be sent
         eventHandler.shadowObserve_willSendToolResult(callId: callId)
 
-        // PRE-SEND DIAGNOSTICS
         self.logger.log(
             "🔧 [TOOL_OUTPUT_START] Preparing to send tool call result",
             attributes: logAttributes(
                 for: .info,
                 metadata: [
-                    "callId": callId,
-                    "itemId": itemId,
-                    "resultLength": result.count,
+                    "callId": callId, "itemId": itemId, "resultLength": result.count,
                     "result": result,
                     "dataChannelState": dataChannel?.readyState.rawValue ?? -1,
                     "peerConnectionState": peerConnection?.connectionState.rawValue ?? -1,
                     "timestamp": ISO8601DateFormatter().string(from: Date()),
-                ])
-        )
+                ]))
 
         let outputDict: [String: Any] = [
             "type": "conversation.item.create",
@@ -775,14 +543,8 @@ extension OpenAIWebRTCClient: ToolCallResponder {
             ],
         ]
 
-        // Save this item to conversation tracking BEFORE sending
-        // This ensures we have the full content for compaction
         eventHandler.saveConversationItem(
-            itemId: itemId,
-            role: "system",
-            type: "function_call_output",
-            fullContent: result
-        )
+            itemId: itemId, role: "system", type: "function_call_output", fullContent: result)
 
         let didSend = sendEvent(outputDict)
 
@@ -792,16 +554,12 @@ extension OpenAIWebRTCClient: ToolCallResponder {
                 attributes: logAttributes(
                     for: .info,
                     metadata: [
-                        "callId": callId,
-                        "itemId": itemId,
-                        "resultLength": result.count,
+                        "callId": callId, "itemId": itemId, "resultLength": result.count,
                         "result": result,
                         "timestamp": ISO8601DateFormatter().string(from: Date()),
-                    ])
-            )
+                    ]))
             eventHandler.recordExternalActivity(reason: "tool_call_result")
 
-            // Check state machine before sending response.create
             let trigger = "tool_call_result:\(callId)"
             let responseInProgress = eventHandler.checkResponseInProgress()
             let audioStreaming = eventHandler.checkAssistantAudioStreaming()
@@ -814,8 +572,7 @@ extension OpenAIWebRTCClient: ToolCallResponder {
                 attributes: logAttributes(
                     for: .info,
                     metadata: [
-                        "trigger": "tool_call_result",
-                        "callId": callId,
+                        "trigger": "tool_call_result", "callId": callId,
                         "responseInProgress": responseInProgress,
                         "currentResponseId": currentRespId as Any,
                         "audioStreaming": audioStreaming,
@@ -823,41 +580,29 @@ extension OpenAIWebRTCClient: ToolCallResponder {
                             "If OpenAI returns conversation_already_has_active_response, compare blocking ID with currentResponseId",
                         "timestamp": ISO8601DateFormatter().string(from: Date()),
                         "threadId": Thread.current.description,
-                    ])
-            )
+                    ]))
 
             if responseInProgress {
-
-                // Continue conversation
                 self.logger.log(
                     "⚠️ Already have a response in progress (\(shortCurrentRespId)); queuing response.create",
                     attributes: logAttributes(
                         for: .warn,
                         metadata: [
-                            "trigger": "tool_call_result",
-                            "callId": callId,
+                            "trigger": "tool_call_result", "callId": callId,
                             "responseInProgress": responseInProgress,
                             "currentResponseId": currentRespId as Any,
                             "audioStreaming": audioStreaming,
                             "timestamp": ISO8601DateFormatter().string(from: Date()),
-                        ])
-                )
-
-                // Queue for later - will be sent when current response completes
+                        ]))
                 eventHandler.queueResponseCreate(trigger: trigger)
-
-                // SHADOW: Observe response.create would be queued
                 eventHandler.shadowObserve_willSendResponseCreate(trigger: trigger)
             } else {
-
-                // Continue conversation
                 self.logger.log(
                     "📤 [RESPONSE_CREATE] Sending response.create (localState=idle, lastResp=\(shortCurrentRespId))",
                     attributes: logAttributes(
                         for: .info,
                         metadata: [
-                            "trigger": "tool_call_result",
-                            "callId": callId,
+                            "trigger": "tool_call_result", "callId": callId,
                             "responseInProgress": responseInProgress,
                             "currentResponseId": currentRespId as Any,
                             "audioStreaming": audioStreaming,
@@ -865,19 +610,11 @@ extension OpenAIWebRTCClient: ToolCallResponder {
                                 "If error occurs, OpenAI may have started a new response we didn't see",
                             "timestamp": ISO8601DateFormatter().string(from: Date()),
                             "threadId": Thread.current.description,
-                        ])
-                )
-
-                // SHADOW: Observe response.create about to be sent
+                        ]))
                 eventHandler.shadowObserve_willSendResponseCreate(trigger: trigger)
-
-                // Safe to send immediately
                 let responseCreateSent = sendEvent(["type": "response.create"])
-
                 if responseCreateSent {
                     eventHandler.didSendResponseCreate(trigger: trigger)
-
-                    // SHADOW: Observe tool call completed (response sent)
                     eventHandler.shadowObserve_didCompleteToolCall(callId: callId)
                 } else {
                     self.logger.log(
@@ -888,8 +625,7 @@ extension OpenAIWebRTCClient: ToolCallResponder {
                                 "callId": callId,
                                 "dataChannelState": dataChannel?.readyState.rawValue ?? -1,
                                 "timestamp": ISO8601DateFormatter().string(from: Date()),
-                            ])
-                    )
+                            ]))
                 }
             }
         } else {
@@ -898,9 +634,7 @@ extension OpenAIWebRTCClient: ToolCallResponder {
                 attributes: logAttributes(
                     for: .error,
                     metadata: [
-                        "callId": callId,
-                        "itemId": itemId,
-                        "resultLength": result.count,
+                        "callId": callId, "itemId": itemId, "resultLength": result.count,
                         "result": result,
                         "dataChannelState": dataChannel?.readyState.rawValue ?? -1,
                         "peerConnectionState": peerConnection?.connectionState.rawValue ?? -1,
@@ -908,16 +642,11 @@ extension OpenAIWebRTCClient: ToolCallResponder {
                             "call_id may not exist in conversation (could have been pruned)",
                         "recommendation": "Check if conversation pruning deleted this call_id",
                         "timestamp": ISO8601DateFormatter().string(from: Date()),
-                    ])
-            )
-
-            // CRITICAL: Do NOT send response.create if output failed
-            // This prevents cascading "conversation_already_has_active_response" errors
+                    ]))
         }
     }
 
     func sendToolCallError(callId: String, error: String) {
-        // Generate client-controlled ID for this error output (max 32 chars, no hyphens)
         let itemId = UUID().uuidString.replacingOccurrences(of: "-", with: "")
         let errorOutput = "{\"error\": \"\(error)\"}"
 
@@ -926,14 +655,10 @@ extension OpenAIWebRTCClient: ToolCallResponder {
             attributes: logAttributes(
                 for: .warn,
                 metadata: [
-                    "callId": callId,
-                    "itemId": itemId,
-                    "error": error,
-                    "errorOutput": errorOutput,
+                    "callId": callId, "itemId": itemId, "error": error, "errorOutput": errorOutput,
                     "dataChannelState": dataChannel?.readyState.rawValue ?? -1,
                     "timestamp": ISO8601DateFormatter().string(from: Date()),
-                ])
-        )
+                ]))
 
         let outputDict: [String: Any] = [
             "type": "conversation.item.create",
@@ -945,13 +670,8 @@ extension OpenAIWebRTCClient: ToolCallResponder {
             ],
         ]
 
-        // Save this error output to conversation tracking
         eventHandler.saveConversationItem(
-            itemId: itemId,
-            role: "system",
-            type: "function_call_output",
-            fullContent: errorOutput
-        )
+            itemId: itemId, role: "system", type: "function_call_output", fullContent: errorOutput)
 
         let didSend = sendEvent(outputDict)
 
@@ -961,19 +681,14 @@ extension OpenAIWebRTCClient: ToolCallResponder {
                 attributes: logAttributes(
                     for: .error,
                     metadata: [
-                        "callId": callId,
-                        "itemId": itemId,
-                        "error": error,
-                        "errorOutput": errorOutput,
+                        "callId": callId, "itemId": itemId, "error": error, "errorOutput": errorOutput,
                         "likelyReason":
                             "call_id may not exist in conversation (could have been pruned)",
                         "timestamp": ISO8601DateFormatter().string(from: Date()),
-                    ])
-            )
-            return  // Don't send response.create if error output failed
+                    ]))
+            return
         }
 
-        // Check state machine before sending response.create
         let trigger = "tool_call_error:\(callId)"
         let responseInProgress = eventHandler.checkResponseInProgress()
         let audioStreaming = eventHandler.checkAssistantAudioStreaming()
@@ -986,15 +701,13 @@ extension OpenAIWebRTCClient: ToolCallResponder {
             attributes: logAttributes(
                 for: .info,
                 metadata: [
-                    "trigger": "tool_call_error",
-                    "callId": callId,
+                    "trigger": "tool_call_error", "callId": callId,
                     "responseInProgress": responseInProgress,
                     "currentResponseId": currentRespIdErr as Any,
                     "audioStreaming": audioStreaming,
                     "timestamp": ISO8601DateFormatter().string(from: Date()),
                     "threadId": Thread.current.description,
-                ])
-        )
+                ]))
 
         if responseInProgress {
             self.logger.log(
@@ -1002,15 +715,12 @@ extension OpenAIWebRTCClient: ToolCallResponder {
                 attributes: logAttributes(
                     for: .warn,
                     metadata: [
-                        "trigger": "tool_call_error",
-                        "callId": callId,
+                        "trigger": "tool_call_error", "callId": callId,
                         "responseInProgress": responseInProgress,
                         "currentResponseId": currentRespIdErr as Any,
                         "audioStreaming": audioStreaming,
                         "timestamp": ISO8601DateFormatter().string(from: Date()),
-                    ])
-            )
-            // Queue for later - will be sent when current response completes
+                    ]))
             eventHandler.queueResponseCreate(trigger: trigger)
         } else {
             self.logger.log(
@@ -1018,8 +728,7 @@ extension OpenAIWebRTCClient: ToolCallResponder {
                 attributes: logAttributes(
                     for: .info,
                     metadata: [
-                        "trigger": "tool_call_error",
-                        "callId": callId,
+                        "trigger": "tool_call_error", "callId": callId,
                         "responseInProgress": responseInProgress,
                         "currentResponseId": currentRespIdErr as Any,
                         "audioStreaming": audioStreaming,
@@ -1027,12 +736,9 @@ extension OpenAIWebRTCClient: ToolCallResponder {
                             "If error occurs, OpenAI may have started a new response we didn't see",
                         "timestamp": ISO8601DateFormatter().string(from: Date()),
                         "threadId": Thread.current.description,
-                    ])
-            )
+                    ]))
             let responseCreateSent = sendEvent(["type": "response.create"])
-            if responseCreateSent {
-                eventHandler.didSendResponseCreate(trigger: trigger)
-            }
+            if responseCreateSent { eventHandler.didSendResponseCreate(trigger: trigger) }
         }
         eventHandler.recordExternalActivity(reason: "tool_call_error")
     }

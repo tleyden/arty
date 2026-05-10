@@ -15,8 +15,8 @@ enum VmWebrtcLogging {
     ///   .error  - Errors only
     ///
     /// To reduce log verbosity, uncomment the .debug line and comment the .trace line:
-    // static let minimumLogLevel: OpenAIWebRTCClient.NativeLogLevel = .trace
-    static let minimumLogLevel: OpenAIWebRTCClient.NativeLogLevel = .debug
+    // static let minimumLogLevel: NativeLogLevel = .trace
+    static let minimumLogLevel: NativeLogLevel = .debug
 
     static let logger = NativeLogger(category: "VmWebrtc", tracingManager: nil)
 
@@ -26,13 +26,13 @@ enum VmWebrtcLogging {
 
     /// Check if a log level should be emitted based on the minimum log level configuration.
     /// Returns true if the level is at or above the minimum level.
-    static func shouldLog(level: OpenAIWebRTCClient.NativeLogLevel) -> Bool {
+    static func shouldLog(level: NativeLogLevel) -> Bool {
         return level.numericValue >= minimumLogLevel.numericValue
     }
 }
 
 func logAttributes(
-    for level: OpenAIWebRTCClient.NativeLogLevel,
+    for level: NativeLogLevel,
     metadata: [String: Any]? = nil
 ) -> [String: Any] {
     var attributes = metadata ?? [:]
@@ -42,7 +42,7 @@ func logAttributes(
 
 // MARK: - NativeLogLevel Extension for Comparison
 
-extension OpenAIWebRTCClient.NativeLogLevel {
+extension NativeLogLevel {
     /// Numeric value for log level comparison.
     /// Higher values = more severe/important logs.
     var numericValue: Int {
