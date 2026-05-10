@@ -130,6 +130,17 @@ async function easSubmitLocalIpa(): Promise<number> {
   return executeCommand(`eas submit --platform ios --path "${ipa.filePath}"`);
 }
 
+async function easBuildProdLocal(): Promise<number> {
+  const buildExitCode = await executeCommand(
+    "eas build --platform ios --profile production --non-interactive --local"
+  );
+  if (buildExitCode !== 0) {
+    return buildExitCode;
+  }
+  console.log('\n✅ Local production build complete. Proceeding to submission...');
+  return easSubmitLocalIpa();
+}
+
 async function startExpoServer(): Promise<number> {
   console.log('\n🔍 Running TypeScript check...\n');
 
@@ -240,6 +251,13 @@ const BUILD_OPTIONS: BuildOption[] = [
     flag: "eas-build-prod",
     command: "eas build --platform ios --profile production --non-interactive && eas submit --platform ios",
     description: "Build and submit iOS app to App Store",
+  },
+  {
+    name: "EAS Build Prod Local",
+    flag: "eas-build-prod-local",
+    command: "",
+    description: "Build IPA locally with Distribution profile, then submit to App Store",
+    customHandler: easBuildProdLocal,
   },
   {
     name: "EAS Submit Local IPA",
