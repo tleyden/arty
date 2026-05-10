@@ -21,7 +21,7 @@
 
 **Requirements**
 
-* iOS only for now
+* iOS - tested on ios 26, may work on earlier versions
 * OpenAI API Key
 
 ## 📱 Screenshots
