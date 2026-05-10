@@ -13,6 +13,7 @@ import { ConfigureLanguage } from "../components/settings/ConfigureLanguage";
 import { ConfigureMainPromptModal } from "../components/settings/ConfigureMainPromptModal";
 import { ConfigureToolsSheet } from "../components/settings/ConfigureToolsSheet";
 import { ConfigureTranscription } from "../components/settings/ConfigureTranscription";
+import { ConfigureTranslation } from "../components/settings/ConfigureTranslation";
 import { ConfigureVad } from "../components/settings/ConfigureVad";
 import { ConfigureVoice } from "../components/settings/ConfigureVoice";
 import { ConnectorsConfig } from "../components/settings/ConnectorsConfig";
@@ -130,6 +131,8 @@ export default function Index() {
     DEFAULT_TRANSCRIPTION_ENABLED,
   );
   const [transcriptionSheetVisible, setTranscriptionSheetVisible] =
+    useState(false);
+  const [translationConfigVisible, setTranslationConfigVisible] =
     useState(false);
   const [onboardingVisible, setOnboardingVisible] = useState(false);
   const [onboardingCheckToken, setOnboardingCheckToken] = useState(0);
@@ -432,6 +435,11 @@ export default function Index() {
         return;
       }
 
+      if (section.id === "translation") {
+        setTranslationConfigVisible(true);
+        return;
+      }
+
       if (section.id === "advanced") {
         setMainPromptDraft(mainPromptAddition);
         setAdvancedConfigVisible(true);
@@ -451,6 +459,7 @@ export default function Index() {
       setDeveloperModeVisible,
       mainPromptAddition,
       setAdvancedConfigVisible,
+      setTranslationConfigVisible,
     ],
   );
 
@@ -616,6 +625,10 @@ export default function Index() {
         transcriptionEnabled={transcriptionEnabled}
         onToggleTranscription={handleToggleTranscription}
         onClose={() => setTranscriptionSheetVisible(false)}
+      />
+      <ConfigureTranslation
+        visible={translationConfigVisible}
+        onClose={() => setTranslationConfigVisible(false)}
       />
       <ConfigureToolsSheet
         visible={configureToolsVisible}

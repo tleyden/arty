@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
   AppState,
@@ -15,6 +15,10 @@ import { MiniVisualizer } from "../components/AudioVisualizer";
 import { MuteToggle } from "../components/MuteToggle";
 import { SpeakerModeToggle } from "../components/SpeakerModeToggle";
 import { log } from "../lib/logger";
+import {
+  DEFAULT_TRANSLATION_IDLE_TIMEOUT_SECONDS,
+  loadTranslationIdleTimeoutSeconds,
+} from "../lib/translationSettings";
 import type {
   AudioMetricsEventPayload,
   BaseOpenAIConnectionOptions,
@@ -85,6 +89,50 @@ export function RealtimeTranslation({
   const [inputTranscript, setInputTranscript] = useState("");
   const [outputTranscript, setOutputTranscript] = useState("");
 
+  const idleTimeoutSecondsRef = useRef(DEFAULT_TRANSLATION_IDLE_TIMEOUT_SECONDS);
+  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    loadTranslationIdleTimeoutSeconds().then((seconds) => {
+      idleTimeoutSecondsRef.current = seconds;
+    });
+  }, []);
+
+  const resetIdleTimer = useCallback(() => {
+    if (idleTimerRef.current !== null) {
+      clearTimeout(idleTimerRef.current);
+    }
+    idleTimerRef.current = setTimeout(async () => {
+      log.warn("Translation session ended due to inactivity", {});
+      try {
+        await closeTranslationConnectionAsync();
+      } catch {
+        // ignore close errors during idle timeout
+      }
+      setIsSessionActive(false);
+      setIsStopping(false);
+      setIsConnecting(false);
+      setFrequencyBins([]);
+      Alert.alert("Session Ended", "Disconnected due to inactivity.");
+    }, idleTimeoutSecondsRef.current * 1000);
+  }, []);
+
+  useEffect(() => {
+    if (isSessionActive) {
+      resetIdleTimer();
+    } else {
+      if (idleTimerRef.current !== null) {
+        clearTimeout(idleTimerRef.current);
+        idleTimerRef.current = null;
+      }
+    }
+    return () => {
+      if (idleTimerRef.current !== null) {
+        clearTimeout(idleTimerRef.current);
+      }
+    };
+  }, [isSessionActive, resetIdleTimer]);
+
   useEffect(() => {
     if (!VmWebrtcTranslatorModule?.addListener) return undefined;
     const sub = VmWebrtcTranslatorModule.addListener(
@@ -103,10 +151,11 @@ export function RealtimeTranslation({
       (payload: TranslationTranscriptEventPayload) => {
         log.debug("Translation input delta", {}, { delta: payload.delta });
         setInputTranscript((prev) => prev + payload.delta);
+        resetIdleTimer();
       },
     );
     return () => sub.remove?.();
-  }, []);
+  }, [resetIdleTimer]);
 
   useEffect(() => {
     if (!VmWebrtcTranslatorModule?.addListener) return undefined;
@@ -115,10 +164,11 @@ export function RealtimeTranslation({
       (payload: TranslationTranscriptEventPayload) => {
         log.debug("Translation output delta", {}, { delta: payload.delta });
         setOutputTranscript((prev) => prev + payload.delta);
+        resetIdleTimer();
       },
     );
     return () => sub.remove?.();
-  }, []);
+  }, [resetIdleTimer]);
 
   useEffect(() => {
     if (!VmWebrtcTranslatorModule?.addListener) return undefined;

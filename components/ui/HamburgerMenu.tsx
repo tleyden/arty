@@ -44,6 +44,14 @@ export const MENU_SECTIONS: MenuSection[] = [
     backgroundColor: "#FBF5FF",
   },
   {
+    id: "translation",
+    title: "Configure Translation",
+    description: "Set idle timeout and translation options.",
+    icon: "🌐",
+    iconBackgroundColor: "#E7F7F0",
+    backgroundColor: "#F2FBF7",
+  },
+  {
     id: "connectors",
     title: "Extensions (One-off)",
     description: "Connect to GitHub, Drive, and more.",
