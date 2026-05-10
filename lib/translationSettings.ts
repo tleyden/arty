@@ -19,7 +19,7 @@ export const MIN_TRANSLATION_IDLE_TIMEOUT_SECONDS = 10;
 export const MAX_TRANSLATION_IDLE_TIMEOUT_SECONDS = 300;
 export const DEFAULT_OUTPUT_LANGUAGE = "de";
 export const DEFAULT_TRANSLATION_NOISE_REDUCTION: NoiseReductionType =
-  "disabled";
+  "near_field";
 export const DEFAULT_TRANSLATION_INPUT_TRANSCRIPTION_ENABLED = false;
 export const DEFAULT_TRANSLATION_INPUT_TRANSCRIPTION_MODEL =
   "gpt-realtime-whisper";
