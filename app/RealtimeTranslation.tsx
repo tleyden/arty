@@ -247,17 +247,52 @@ export function RealtimeTranslation({
           loadTranslationInputTranscriptionModel(),
         ]);
 
+      // Log the full intended stream topology so RCA is easy in logfire.
+      // In bidirectional mode, two streams are needed:
+      //   stream[0]: user's mic → translated to outputLanguage (for the friend)
+      //   stream[1]: friend's mic → translated to bidirectionalLanguage (for the user)
+      const intendedStreams = isBidirectional
+        ? [
+            { index: 0, role: "primary", outputLanguage },
+            { index: 1, role: "secondary (reverse)", outputLanguage: bidirectionalLanguage },
+          ]
+        : [{ index: 0, role: "primary", outputLanguage }];
+
       log.info(
         "Starting translation session",
         {},
         {
-          outputLanguage,
+          mode: isBidirectional ? "bidirectional" : "unidirectional",
           audioOutput,
           noiseReductionType,
           transcriptionEnabled,
           transcriptionModel,
+          intendedStreams,
         },
       );
+
+      if (isBidirectional) {
+        // RCA marker: bidirectional is UI-only — the native layer only opens one stream.
+        // Stream[0] (outputLanguage) will open; stream[1] (bidirectionalLanguage) will NOT.
+        // Fix needed: pass isBidirectional + bidirectionalLanguage to openTranslationConnectionAsync
+        // and implement two concurrent WebRTC sessions in the native module.
+        log.warn(
+          "Bidirectional mode enabled but native layer opens only one stream — reverse translation will not work",
+          {},
+          {
+            openingStream: { index: 0, role: "primary", outputLanguage },
+            skippedStream: { index: 1, role: "secondary (reverse)", outputLanguage: bidirectionalLanguage },
+            fix: "native layer needs bidirectional support",
+          },
+        );
+      }
+
+      log.info(
+        "Opening translation stream[0]",
+        {},
+        { role: "primary", outputLanguage, audioOutput },
+      );
+
       const state: OpenAIConnectionState = await openTranslationConnectionAsync(
         {
           apiKey: baseConnectionOptions.apiKey,
@@ -270,7 +305,7 @@ export function RealtimeTranslation({
           }),
         },
       );
-      log.info("Translation session resolved", {}, { state });
+      log.info("Translation stream[0] resolved", {}, { role: "primary", outputLanguage, state });
       const connected = state === "connected" || state === "completed";
       setIsSessionActive(connected);
     } catch (error) {
