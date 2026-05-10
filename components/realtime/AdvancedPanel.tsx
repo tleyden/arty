@@ -58,7 +58,7 @@ export function AdvancedPanel({
               <Text style={styles.biLabel}>Bidirectional</Text>
               {isBidirectional && biLang ? (
                 <Text style={styles.biSub}>
-                  Translate back to {biLang.flag} {biLang.name} · change in Configure
+                  Translate back to {biLang.flag} {biLang.name}
                 </Text>
               ) : null}
             </View>
