@@ -13,6 +13,7 @@ import { ConfigureLanguage } from "../components/settings/ConfigureLanguage";
 import { ConfigureMainPromptModal } from "../components/settings/ConfigureMainPromptModal";
 import { ConfigureToolsSheet } from "../components/settings/ConfigureToolsSheet";
 import { ConfigureTranscription } from "../components/settings/ConfigureTranscription";
+import { ConfigureTranslation } from "../components/settings/ConfigureTranslation";
 import { ConfigureVad } from "../components/settings/ConfigureVad";
 import { ConfigureVoice } from "../components/settings/ConfigureVoice";
 import { ConnectorsConfig } from "../components/settings/ConnectorsConfig";
@@ -39,6 +40,11 @@ import {
   loadLanguagePreference,
   saveLanguagePreference,
 } from "../lib/languagePreference";
+import {
+  DEFAULT_CHAT_MODE,
+  loadChatModePreference,
+  saveChatModePreference,
+} from "../lib/chatModePreference";
 import { log } from "../lib/logger";
 import { loadMainPromptAddition } from "../lib/mainPrompt";
 import { getApiKey } from "../lib/secure-storage";
@@ -58,8 +64,13 @@ import {
   loadVoicePreference,
   saveVoicePreference,
 } from "../lib/voicePreference";
+import {
+  DEFAULT_TRANSCRIPT_FONT_SIZE,
+  loadTranscriptFontSize,
+} from "../lib/translationSettings";
 import { ConfigureApiKeyScreen } from "./ConfigureApiKey";
 import { OnboardingWizard } from "./OnboardingWizard";
+import RealtimeTranslation from "./RealtimeTranslation";
 import TextChat from "./TextChat";
 import VoiceChat from "./VoiceChat";
 
@@ -112,7 +123,7 @@ export default function Index() {
   const [selectedVadMode, setSelectedVadMode] =
     useState<VadMode>(DEFAULT_VAD_MODE);
   const [vadSheetVisible, setVadSheetVisible] = useState(false);
-  const [selectedChatMode, setSelectedChatMode] = useState<ChatMode>("voice");
+  const [selectedChatMode, setSelectedChatMode] = useState<ChatMode>(DEFAULT_CHAT_MODE);
   const [chatModeSheetVisible, setChatModeSheetVisible] = useState(false);
   const [selectedLanguage, setSelectedLanguage] = useState(DEFAULT_LANGUAGE);
   const [languageSheetVisible, setLanguageSheetVisible] = useState(false);
@@ -130,6 +141,9 @@ export default function Index() {
   );
   const [transcriptionSheetVisible, setTranscriptionSheetVisible] =
     useState(false);
+  const [translationConfigVisible, setTranslationConfigVisible] =
+    useState(false);
+  const [transcriptFontSize, setTranscriptFontSize] = useState(DEFAULT_TRANSCRIPT_FONT_SIZE);
   const [onboardingVisible, setOnboardingVisible] = useState(false);
   const [onboardingCheckToken, setOnboardingCheckToken] = useState(0);
   const [onboardingCompletionToken, setOnboardingCompletionToken] = useState(0);
@@ -214,6 +228,23 @@ export default function Index() {
   useEffect(() => {
     let isMounted = true;
 
+    const hydrateChatModePreference = async () => {
+      const stored = await loadChatModePreference();
+      if (!isMounted) return;
+      setSelectedChatMode(stored);
+      log.info("Chat mode preference loaded from storage", {}, { mode: stored });
+    };
+
+    hydrateChatModePreference();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
     const hydrateContextWindowPreferences = async () => {
       const stored = await loadContextWindowPreferences();
       const compactionDisabled = await loadCompactionDisabled();
@@ -283,6 +314,19 @@ export default function Index() {
   }, []);
 
   useEffect(() => {
+    let isMounted = true;
+
+    loadTranscriptFontSize().then((stored) => {
+      if (!isMounted) return;
+      setTranscriptFontSize(stored);
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
     let isActive = true;
 
     const evaluateOnboardingStatus = async () => {
@@ -341,7 +385,8 @@ export default function Index() {
 
   const handleSelectChatMode = useCallback((mode: ChatMode) => {
     setSelectedChatMode(mode);
-    log.info("Chat mode preference updated", {}, { mode });
+    void saveChatModePreference(mode);
+    log.info("Chat mode preference updated and saved", {}, { mode });
     setChatModeSheetVisible(false);
   }, []);
 
@@ -431,6 +476,11 @@ export default function Index() {
         return;
       }
 
+      if (section.id === "translation") {
+        setTranslationConfigVisible(true);
+        return;
+      }
+
       if (section.id === "advanced") {
         setMainPromptDraft(mainPromptAddition);
         setAdvancedConfigVisible(true);
@@ -450,6 +500,7 @@ export default function Index() {
       setDeveloperModeVisible,
       mainPromptAddition,
       setAdvancedConfigVisible,
+      setTranslationConfigVisible,
     ],
   );
 
@@ -526,7 +577,16 @@ export default function Index() {
   }, []);
 
   const renderChatSurface =
-    selectedChatMode === "voice" ? (
+    selectedChatMode === "text" ? (
+      <TextChat mainPromptAddition={mainPromptAddition} />
+    ) : selectedChatMode === "realtimeTranslation" ? (
+      <RealtimeTranslation
+        baseConnectionOptions={baseConnectionOptions}
+        hasMicPermission={hasMicPermission}
+        permissionError={permissionError}
+        transcriptFontSize={transcriptFontSize}
+      />
+    ) : (
       <VoiceChat
         baseConnectionOptions={baseConnectionOptions}
         hasMicPermission={hasMicPermission}
@@ -539,8 +599,6 @@ export default function Index() {
         disableCompaction={disableCompaction}
         selectedLanguage={selectedLanguage}
       />
-    ) : (
-      <TextChat mainPromptAddition={mainPromptAddition} />
     );
 
   return (
@@ -609,6 +667,11 @@ export default function Index() {
         transcriptionEnabled={transcriptionEnabled}
         onToggleTranscription={handleToggleTranscription}
         onClose={() => setTranscriptionSheetVisible(false)}
+      />
+      <ConfigureTranslation
+        visible={translationConfigVisible}
+        onClose={() => setTranslationConfigVisible(false)}
+        onFontSizeChange={setTranscriptFontSize}
       />
       <ConfigureToolsSheet
         visible={configureToolsVisible}

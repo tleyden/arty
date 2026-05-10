@@ -72,6 +72,75 @@ async function patchHeaders(): Promise<number> {
   }
 }
 
+async function findMostRecentIpa(): Promise<{ filePath: string; size: number; mtime: Date } | null> {
+  let mostRecent: { filePath: string; size: number; mtime: Date } | null = null;
+
+  async function searchDir(dir: string, depth: number): Promise<void> {
+    if (depth > 3) return;
+    let entries;
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isFile() && entry.name.endsWith('.ipa')) {
+        const stat = await fs.stat(fullPath);
+        if (!mostRecent || stat.mtime > mostRecent.mtime) {
+          mostRecent = { filePath: fullPath, size: stat.size, mtime: stat.mtime };
+        }
+      } else if (entry.isDirectory()) {
+        await searchDir(fullPath, depth + 1);
+      }
+    }
+  }
+
+  await searchDir(process.cwd(), 0);
+  return mostRecent;
+}
+
+async function easSubmitLocalIpa(): Promise<number> {
+  console.log('\n🔍 Searching for IPA files...');
+
+  const ipa = await findMostRecentIpa();
+
+  if (!ipa) {
+    console.error('\n❌ No IPA file found. Run a local build first (e.g. EAS Build Dev Local).');
+    return 1;
+  }
+
+  const sizeMb = (ipa.size / (1024 * 1024)).toFixed(1);
+
+  console.log('\n📦 Most recent IPA found:');
+  console.log(`   Path:     ${ipa.filePath}`);
+  console.log(`   Size:     ${sizeMb} MB`);
+  console.log(`   Modified: ${ipa.mtime.toLocaleString()}`);
+
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const answer = await rl.question('\nSubmit this IPA to the App Store? (y/N): ');
+  rl.close();
+
+  if (answer.trim().toLowerCase() !== 'y') {
+    console.log('\nCancelled.');
+    process.exit(0);
+  }
+
+  return executeCommand(`eas submit --platform ios --path "${ipa.filePath}"`);
+}
+
+async function easBuildProdLocal(): Promise<number> {
+  const buildExitCode = await executeCommand(
+    "eas build --platform ios --profile production --non-interactive --local"
+  );
+  if (buildExitCode !== 0) {
+    return buildExitCode;
+  }
+  console.log('\n✅ Local production build complete. Proceeding to submission...');
+  return easSubmitLocalIpa();
+}
+
 async function startExpoServer(): Promise<number> {
   console.log('\n🔍 Running TypeScript check...\n');
 
@@ -182,6 +251,27 @@ const BUILD_OPTIONS: BuildOption[] = [
     flag: "eas-build-prod",
     command: "eas build --platform ios --profile production --non-interactive && eas submit --platform ios",
     description: "Build and submit iOS app to App Store",
+  },
+  {
+    name: "EAS Build Prod Local",
+    flag: "eas-build-prod-local",
+    command: "",
+    description: "Build IPA locally with Distribution profile, then submit to App Store",
+    customHandler: easBuildProdLocal,
+  },
+  {
+    name: "EAS Submit Local IPA",
+    flag: "eas-submit-local-ipa",
+    command: "",
+    description: "Find the most recent local IPA and submit it to the App Store",
+    customHandler: easSubmitLocalIpa,
+  },
+  {
+    name: "Run Xcodebuild",
+    flag: "build-ios-local",
+    command:
+      "set -o pipefail && if test -x \"$(command -v xcpretty)\"; then xcodebuild build -workspace ios/vibemachine.xcworkspace -scheme vibemachine -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' | xcpretty; else xcodebuild build -workspace ios/vibemachine.xcworkspace -scheme vibemachine -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator'; fi",
+    description: "Compile Swift without launching (same compiler as Xcode, no EAS overhead)",
   },
   {
     name: "Open in Xcode",

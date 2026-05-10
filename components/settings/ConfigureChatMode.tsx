@@ -1,7 +1,7 @@
 import { memo } from "react";
-import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { Modal, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 
-export type ChatMode = "voice" | "text";
+export type ChatMode = "voice" | "text" | "realtimeTranslation";
 
 type ConfigureChatModeProps = {
   visible: boolean;
@@ -17,6 +17,15 @@ const CHAT_MODES: { id: ChatMode; label: string; description: string }[] = [
     description: "Talk naturally with realtime responses.",
   },
   { id: "text", label: "Text", description: "Type and read chat messages." },
+  ...(Platform.OS === "ios"
+    ? [
+        {
+          id: "realtimeTranslation" as ChatMode,
+          label: "Realtime Translation",
+          description: "Speak and get instant translation.",
+        },
+      ]
+    : []),
 ];
 
 export const ConfigureChatMode = memo(

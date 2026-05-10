@@ -190,9 +190,7 @@ public class VmWebrtcModule: Module {
                     "vadMode": options.vadMode ?? "nil",
                 ])
             let outputPreference =
-                OpenAIWebRTCClient.AudioOutputPreference(
-                    rawValue: options.audioOutput ?? "handset"
-                ) ?? .handset
+                AudioOutputPreference(rawValue: options.audioOutput ?? "handset") ?? .handset
 
             let sanitizedInstructions = options.instructions
                 .trimmingCharacters(in: .whitespacesAndNewlines)
