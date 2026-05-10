@@ -33,7 +33,7 @@
       <div>Voice chat (home screen)</div>
     </td>
     <td align="center" style="border:none; padding:0 12px;">
-      <img width="250" alt="Realtime Translation/Interpreter" src="https://private-user-images.githubusercontent.com/296876/590115554-4ec85edf-4940-430c-92f9-9b9264f205bf.png" />
+      <img width="250" alt="Realtime Translation/Interpreter" src="https://github.com/user-attachments/assets/1450d8fa-9945-4369-910d-ce99a2aa9b6b" />
       <div>Realtime Translation/Interpreter</div>
     </td>
     <td align="center" style="border:none; padding:0 12px;">
