@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   Alert,
   AppState,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -52,6 +53,14 @@ const TRANSLATION_OUTPUT_LANGUAGES: TranslationLanguage[] = [
   { code: "it", name: "Italian", flag: "🇮🇹" },
 ];
 
+const FEATURED_LANGUAGE_CODES = ["de", "en", "es"];
+const featuredLanguages = TRANSLATION_OUTPUT_LANGUAGES.filter((l) =>
+  FEATURED_LANGUAGE_CODES.includes(l.code),
+);
+const moreLanguages = TRANSLATION_OUTPUT_LANGUAGES.filter(
+  (l) => !FEATURED_LANGUAGE_CODES.includes(l.code),
+);
+
 type RealtimeTranslationProps = {
   baseConnectionOptions: BaseOpenAIConnectionOptions | null;
   hasMicPermission: boolean;
@@ -64,6 +73,7 @@ export function RealtimeTranslation({
   permissionError,
 }: RealtimeTranslationProps) {
   const [outputLanguage, setOutputLanguage] = useState("de");
+  const [languageModalVisible, setLanguageModalVisible] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isSessionActive, setIsSessionActive] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
@@ -292,13 +302,8 @@ export function RealtimeTranslation({
 
       <View style={styles.languagePickerContainer}>
         <Text style={styles.languagePickerLabel}>Translate to</Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.languagePickerScroll}
-          contentContainerStyle={styles.languagePickerContent}
-        >
-          {TRANSLATION_OUTPUT_LANGUAGES.map((lang) => {
+        <View style={styles.languagePickerRow}>
+          {featuredLanguages.map((lang) => {
             const isSelected = outputLanguage === lang.code;
             return (
               <Pressable
@@ -322,8 +327,91 @@ export function RealtimeTranslation({
               </Pressable>
             );
           })}
-        </ScrollView>
+          <Pressable
+            onPress={() => !isSessionActive && setLanguageModalVisible(true)}
+            style={[
+              styles.langChip,
+              styles.langChipMore,
+              isSessionActive && styles.langChipDisabled,
+              !FEATURED_LANGUAGE_CODES.includes(outputLanguage) &&
+                styles.langChipSelected,
+            ]}
+          >
+            {(() => {
+              const selected = !FEATURED_LANGUAGE_CODES.includes(outputLanguage)
+                ? TRANSLATION_OUTPUT_LANGUAGES.find((l) => l.code === outputLanguage)
+                : null;
+              return (
+                <>
+                  <Text style={styles.langFlag}>{selected ? selected.flag : "🌐"}</Text>
+                  <Text
+                    style={[
+                      styles.langName,
+                      selected && styles.langNameSelected,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {selected ? selected.name : "More…"}
+                  </Text>
+                </>
+              );
+            })()}
+          </Pressable>
+        </View>
       </View>
+
+      <Modal
+        visible={languageModalVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setLanguageModalVisible(false)}
+      >
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={() => setLanguageModalVisible(false)}
+        >
+          <Pressable style={styles.modalSheet} onPress={() => {}}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalTitle}>Choose Language</Text>
+            <ScrollView
+              style={styles.modalScroll}
+              contentContainerStyle={styles.modalScrollContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {moreLanguages.map((lang) => {
+                const isSelected = outputLanguage === lang.code;
+                return (
+                  <Pressable
+                    key={lang.code}
+                    onPress={() => {
+                      setOutputLanguage(lang.code);
+                      setLanguageModalVisible(false);
+                    }}
+                    style={({ pressed }) => [
+                      styles.modalLangRow,
+                      isSelected && styles.modalLangRowSelected,
+                      pressed && styles.modalLangRowPressed,
+                    ]}
+                  >
+                    <Text style={styles.modalLangFlag}>{lang.flag}</Text>
+                    <Text
+                      style={[
+                        styles.modalLangName,
+                        isSelected && styles.modalLangNameSelected,
+                      ]}
+                    >
+                      {lang.name}
+                    </Text>
+                    {isSelected && (
+                      <Text style={styles.modalCheckmark}>✓</Text>
+                    )}
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <Pressable
         accessibilityRole="button"
@@ -567,52 +655,123 @@ const styles = StyleSheet.create({
   },
   languagePickerContainer: {
     width: "100%",
-    marginBottom: 24,
+    marginBottom: 20,
   },
   languagePickerLabel: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "600",
     color: "#8E8E93",
     textTransform: "uppercase",
     letterSpacing: 0.5,
-    marginBottom: 10,
-    paddingHorizontal: 4,
-  },
-  languagePickerScroll: {
-    width: "100%",
-  },
-  languagePickerContent: {
-    gap: 8,
+    marginBottom: 8,
     paddingHorizontal: 2,
   },
+  languagePickerRow: {
+    flexDirection: "row",
+    gap: 6,
+  },
   langChip: {
+    flex: 1,
     alignItems: "center",
     backgroundColor: "#F2F2F7",
-    borderRadius: 10,
+    borderRadius: 8,
     borderWidth: 1.5,
     borderColor: "#E5E5EA",
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    gap: 4,
-    minWidth: 70,
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    gap: 3,
   },
   langChipSelected: {
     backgroundColor: "#E8F5E8",
     borderColor: "#4CAF50",
   },
+  langChipMore: {
+    backgroundColor: "#F2F2F7",
+  },
   langChipDisabled: {
-    opacity: 0.5,
+    opacity: 0.45,
   },
   langFlag: {
-    fontSize: 22,
+    fontSize: 18,
   },
   langName: {
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: "600",
     color: "#3C3C43",
     textAlign: "center",
   },
   langNameSelected: {
     color: "#2E7D32",
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "flex-end",
+  },
+  modalSheet: {
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingTop: 12,
+    paddingBottom: 40,
+    maxHeight: "60%",
+  },
+  modalHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "#C7C7CC",
+    alignSelf: "center",
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 17,
+    fontWeight: "600",
+    color: "#1C1C1E",
+    textAlign: "center",
+    marginBottom: 16,
+    paddingHorizontal: 20,
+  },
+  modalScroll: {
+    paddingHorizontal: 20,
+  },
+  modalScrollContent: {
+    gap: 8,
+    paddingBottom: 8,
+  },
+  modalLangRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: "#E5E5EA",
+    backgroundColor: "#FAFAFA",
+  },
+  modalLangRowSelected: {
+    borderColor: "#4CAF50",
+    backgroundColor: "#E8F5E8",
+  },
+  modalLangRowPressed: {
+    backgroundColor: "#F0F0F5",
+  },
+  modalLangFlag: {
+    fontSize: 24,
+  },
+  modalLangName: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: "500",
+    color: "#1C1C1E",
+  },
+  modalLangNameSelected: {
+    color: "#2E7D32",
+    fontWeight: "600",
+  },
+  modalCheckmark: {
+    fontSize: 16,
+    color: "#4CAF50",
   },
 });
