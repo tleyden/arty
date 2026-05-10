@@ -15,6 +15,8 @@ export type TranslationConnectionOptions = {
   baseUrl?: string;
   audioOutput?: "handset" | "speakerphone";
   outputLanguage: string;
+  noiseReductionType?: "near_field" | "far_field";
+  inputTranscriptionModel?: string;
 };
 
 export type TranslationTranscriptEventPayload = {

@@ -40,6 +40,11 @@ import {
   loadLanguagePreference,
   saveLanguagePreference,
 } from "../lib/languagePreference";
+import {
+  DEFAULT_CHAT_MODE,
+  loadChatModePreference,
+  saveChatModePreference,
+} from "../lib/chatModePreference";
 import { log } from "../lib/logger";
 import { loadMainPromptAddition } from "../lib/mainPrompt";
 import { getApiKey } from "../lib/secure-storage";
@@ -114,7 +119,7 @@ export default function Index() {
   const [selectedVadMode, setSelectedVadMode] =
     useState<VadMode>(DEFAULT_VAD_MODE);
   const [vadSheetVisible, setVadSheetVisible] = useState(false);
-  const [selectedChatMode, setSelectedChatMode] = useState<ChatMode>("voice");
+  const [selectedChatMode, setSelectedChatMode] = useState<ChatMode>(DEFAULT_CHAT_MODE);
   const [chatModeSheetVisible, setChatModeSheetVisible] = useState(false);
   const [selectedLanguage, setSelectedLanguage] = useState(DEFAULT_LANGUAGE);
   const [languageSheetVisible, setLanguageSheetVisible] = useState(false);
@@ -209,6 +214,23 @@ export default function Index() {
     };
 
     hydrateVoicePreference();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const hydrateChatModePreference = async () => {
+      const stored = await loadChatModePreference();
+      if (!isMounted) return;
+      setSelectedChatMode(stored);
+      log.info("Chat mode preference loaded from storage", {}, { mode: stored });
+    };
+
+    hydrateChatModePreference();
 
     return () => {
       isMounted = false;
@@ -345,7 +367,8 @@ export default function Index() {
 
   const handleSelectChatMode = useCallback((mode: ChatMode) => {
     setSelectedChatMode(mode);
-    log.info("Chat mode preference updated", {}, { mode });
+    void saveChatModePreference(mode);
+    log.info("Chat mode preference updated and saved", {}, { mode });
     setChatModeSheetVisible(false);
   }, []);
 

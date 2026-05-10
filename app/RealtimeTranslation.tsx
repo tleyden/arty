@@ -18,6 +18,9 @@ import { log } from "../lib/logger";
 import {
   DEFAULT_TRANSLATION_IDLE_TIMEOUT_SECONDS,
   loadTranslationIdleTimeoutSeconds,
+  loadTranslationInputTranscriptionEnabled,
+  loadTranslationInputTranscriptionModel,
+  loadTranslationNoiseReductionType,
 } from "../lib/translationSettings";
 import type {
   AudioMetricsEventPayload,
@@ -248,16 +251,25 @@ export function RealtimeTranslation({
     setOutputTranscript("");
 
     try {
+      const [noiseReductionType, transcriptionEnabled, transcriptionModel] =
+        await Promise.all([
+          loadTranslationNoiseReductionType(),
+          loadTranslationInputTranscriptionEnabled(),
+          loadTranslationInputTranscriptionModel(),
+        ]);
+
       log.info(
         "Starting translation session",
         {},
-        { outputLanguage, audioOutput },
+        { outputLanguage, audioOutput, noiseReductionType, transcriptionEnabled, transcriptionModel },
       );
       const state: OpenAIConnectionState = await openTranslationConnectionAsync({
         apiKey: baseConnectionOptions.apiKey,
         baseUrl: baseConnectionOptions.baseUrl,
         audioOutput,
         outputLanguage,
+        ...(noiseReductionType !== "disabled" && { noiseReductionType }),
+        ...(transcriptionEnabled && { inputTranscriptionModel: transcriptionModel }),
       });
       log.info("Translation session resolved", {}, { state });
       const connected = state === "connected" || state === "completed";
