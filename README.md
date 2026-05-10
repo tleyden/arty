@@ -18,6 +18,8 @@
 * WebRTC
 * Native Swift w/ echo cancellation support
 * Expo / React Native
+* OpenAI `gpt-realtime` for voice assistant mode
+* `gpt-realtime-translate` for translation mode
 
 **Requirements**
 
