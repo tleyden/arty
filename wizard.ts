@@ -189,6 +189,12 @@ const BUILD_OPTIONS: BuildOption[] = [
     command: "xed ios",
     description: "Open iOS project in Xcode",
   },
+  {
+    name: "Register New Device UDID",
+    flag: "register-device",
+    command: "bunx eas device:create",
+    description: "Register a new device UDID with EAS",
+  },
 ];
 
 async function executeCommand(command: string): Promise<number> {
@@ -267,7 +273,7 @@ async function executeChoice(choice: string): Promise<void> {
       : await executeCommand(option.command);
 
     if (exitCode === 0) {
-      console.log(`\n✅ ${option.name} completed successfully!`);
+      console.log(`\n✅ ${option.name} completed successfully! (${new Date().toLocaleTimeString()})`);
       process.exit(0);
     } else {
       console.error(`\n❌ ${option.name} failed with exit code ${exitCode}`);
@@ -290,7 +296,7 @@ async function handleFlag(flag: string): Promise<void> {
       : await executeCommand(option.command);
 
     if (exitCode === 0) {
-      console.log(`\n✅ ${option.name} completed successfully!`);
+      console.log(`\n✅ ${option.name} completed successfully! (${new Date().toLocaleTimeString()})`);
       process.exit(0);
     } else {
       console.error(`\n❌ ${option.name} failed with exit code ${exitCode}`);

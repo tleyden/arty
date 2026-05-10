@@ -1,6 +1,6 @@
 import { Camera } from "expo-camera";
 import { useCallback, useEffect, useState } from "react";
-import { Alert, Platform, StyleSheet, Text, View } from "react-native";
+import { Alert, AppState, Platform, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AdvancedConfigurationSheet } from "../components/settings/AdvancedConfigurationSheet";
@@ -133,6 +133,17 @@ export default function Index() {
   const [onboardingVisible, setOnboardingVisible] = useState(false);
   const [onboardingCheckToken, setOnboardingCheckToken] = useState(0);
   const [onboardingCompletionToken, setOnboardingCompletionToken] = useState(0);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (nextState) => {
+      log.info("[app] AppState change", {}, { nextState });
+    });
+    return () => sub.remove();
+  }, []);
+
+  useEffect(() => {
+    log.info("[app] mcpExtensionsVisible changed", {}, { mcpExtensionsVisible });
+  }, [mcpExtensionsVisible]);
 
   // Load connection options on mount and when API key config screen closes
   useEffect(() => {
@@ -610,6 +621,11 @@ export default function Index() {
       <McpExtensionsScreen
         visible={mcpExtensionsVisible}
         onClose={() => setMcpExtensionsVisible(false)}
+        onBeforeBrowserOpen={() => {
+          setMcpExtensionsVisible(false);
+          setMenuVisible(false);
+        }}
+        onNeedsManualCallback={() => setMcpExtensionsVisible(true)}
       />
       <ConfigureApiKeyScreen
         visible={apiKeyConfigVisible}
