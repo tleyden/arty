@@ -14,15 +14,20 @@ import { SessionFooter } from "../components/realtime/SessionFooter";
 import { TranscriptView } from "../components/realtime/TranscriptView";
 import { log } from "../lib/logger";
 import {
+  DEFAULT_BIDIRECTIONAL_ENABLED,
+  DEFAULT_BIDIRECTIONAL_LANGUAGE,
   DEFAULT_OUTPUT_LANGUAGE,
   DEFAULT_TRANSCRIPT_FONT_SIZE,
   DEFAULT_TRANSLATION_IDLE_TIMEOUT_SECONDS,
+  loadBidirectionalEnabled,
+  loadBidirectionalLanguage,
   loadOutputLanguage,
   loadTranscriptFontSize,
   loadTranslationIdleTimeoutSeconds,
   loadTranslationInputTranscriptionEnabled,
   loadTranslationInputTranscriptionModel,
   loadTranslationNoiseReductionType,
+  saveBidirectionalEnabled,
   saveOutputLanguage,
 } from "../lib/translationSettings";
 import type {
@@ -60,6 +65,8 @@ export function RealtimeTranslation({
   const [isStopping, setIsStopping] = useState(false);
   const [audioOutput, setAudioOutput] = useState<AudioOutput>("handset");
   const [isMuted, setIsMuted] = useState(false);
+  const [isBidirectional, setIsBidirectional] = useState(DEFAULT_BIDIRECTIONAL_ENABLED);
+  const [bidirectionalLanguage, setBidirectionalLanguage] = useState(DEFAULT_BIDIRECTIONAL_LANGUAGE);
   const [statusText, setStatusText] = useState("Ready · speak in any language");
   const [inputTranscript, setInputTranscript] = useState("");
   const [outputTranscript, setOutputTranscript] = useState("");
@@ -79,6 +86,8 @@ export function RealtimeTranslation({
     });
     loadTranscriptFontSize().then(setTranscriptFontSizeLocal);
     loadOutputLanguage().then(setOutputLanguage);
+    loadBidirectionalEnabled().then(setIsBidirectional);
+    loadBidirectionalLanguage().then(setBidirectionalLanguage);
   }, []);
 
   const resetIdleTimer = useCallback(() => {
@@ -325,6 +334,11 @@ export function RealtimeTranslation({
     }
   }, []);
 
+  const handleToggleBidirectional = useCallback((nextValue: boolean) => {
+    setIsBidirectional(nextValue);
+    void saveBidirectionalEnabled(nextValue);
+  }, []);
+
   const handleSelectLanguage = useCallback((code: string) => {
     setOutputLanguage(code);
     saveOutputLanguage(code);
@@ -352,8 +366,11 @@ export function RealtimeTranslation({
         <AdvancedPanel
           isSpeakerphone={isSpeakerphone}
           isMuted={isMuted}
+          isBidirectional={isBidirectional}
+          bidirectionalLanguage={bidirectionalLanguage}
           onToggleSpeakerphone={handleToggleSpeakerphone}
           onToggleMute={handleToggleMute}
+          onToggleBidirectional={handleToggleBidirectional}
         />
 
         <TranscriptView
