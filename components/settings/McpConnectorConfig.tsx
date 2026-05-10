@@ -254,6 +254,7 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
           <Text style={styles.headerTitle}>
             {isEditing ? "Edit MCP Extension" : "Add MCP Extension"}
           </Text>
+          <Text style={styles.headerWarning}>⚠️ MCP auth is still experimental with known bugs</Text>
         </View>
 
         <ScrollView
@@ -497,6 +498,11 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "700",
     color: "#1C1C1E",
+  },
+  headerWarning: {
+    fontSize: 12,
+    color: "#8E8E93",
+    marginTop: 4,
   },
   scrollView: {
     flex: 1,
