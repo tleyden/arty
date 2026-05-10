@@ -55,12 +55,14 @@ interface ConfigureTranslationProps {
   visible: boolean;
   onClose: () => void;
   onFontSizeChange?: (size: number) => void;
+  onBidirectionalLanguageChange?: (code: string) => void;
 }
 
 export const ConfigureTranslation: React.FC<ConfigureTranslationProps> = ({
   visible,
   onClose,
   onFontSizeChange,
+  onBidirectionalLanguageChange,
 }) => {
   const [idleTimeout, setIdleTimeout] = useState(
     DEFAULT_TRANSLATION_IDLE_TIMEOUT_SECONDS,
@@ -124,6 +126,7 @@ export const ConfigureTranslation: React.FC<ConfigureTranslationProps> = ({
   const handleBidirectionalLanguageSelect = (code: string) => {
     setBidirectionalLanguage(code);
     void saveBidirectionalLanguage(code);
+    onBidirectionalLanguageChange?.(code);
     setBiLangModalVisible(false);
   };
 
@@ -305,9 +308,9 @@ export const ConfigureTranslation: React.FC<ConfigureTranslationProps> = ({
           ]}
         >
           <View style={styles.optionCopy}>
-            <Text style={styles.optionTitle}>Bidirectional Language</Text>
+            <Text style={styles.optionTitle}>Translate back to</Text>
             <Text style={styles.optionSubtitle}>
-              Only active if Advanced › Bidirectional is enabled.
+              The language you want to hear. Only active if Advanced › Bidirectional is enabled.
             </Text>
           </View>
           <Text style={styles.biLangValue}>

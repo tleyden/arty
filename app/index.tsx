@@ -65,7 +65,9 @@ import {
   saveVoicePreference,
 } from "../lib/voicePreference";
 import {
+  DEFAULT_BIDIRECTIONAL_LANGUAGE,
   DEFAULT_TRANSCRIPT_FONT_SIZE,
+  loadBidirectionalLanguage,
   loadTranscriptFontSize,
 } from "../lib/translationSettings";
 import { ConfigureApiKeyScreen } from "./ConfigureApiKey";
@@ -144,6 +146,7 @@ export default function Index() {
   const [translationConfigVisible, setTranslationConfigVisible] =
     useState(false);
   const [transcriptFontSize, setTranscriptFontSize] = useState(DEFAULT_TRANSCRIPT_FONT_SIZE);
+  const [bidirectionalLanguage, setBidirectionalLanguage] = useState(DEFAULT_BIDIRECTIONAL_LANGUAGE);
   const [onboardingVisible, setOnboardingVisible] = useState(false);
   const [onboardingCheckToken, setOnboardingCheckToken] = useState(0);
   const [onboardingCompletionToken, setOnboardingCompletionToken] = useState(0);
@@ -319,6 +322,11 @@ export default function Index() {
     loadTranscriptFontSize().then((stored) => {
       if (!isMounted) return;
       setTranscriptFontSize(stored);
+    });
+
+    loadBidirectionalLanguage().then((stored) => {
+      if (!isMounted) return;
+      setBidirectionalLanguage(stored);
     });
 
     return () => {
@@ -585,6 +593,7 @@ export default function Index() {
         hasMicPermission={hasMicPermission}
         permissionError={permissionError}
         transcriptFontSize={transcriptFontSize}
+        bidirectionalLanguage={bidirectionalLanguage}
       />
     ) : (
       <VoiceChat
@@ -672,6 +681,7 @@ export default function Index() {
         visible={translationConfigVisible}
         onClose={() => setTranslationConfigVisible(false)}
         onFontSizeChange={setTranscriptFontSize}
+        onBidirectionalLanguageChange={setBidirectionalLanguage}
       />
       <ConfigureToolsSheet
         visible={configureToolsVisible}

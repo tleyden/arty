@@ -50,6 +50,7 @@ type RealtimeTranslationProps = {
   hasMicPermission: boolean;
   permissionError: string | null;
   transcriptFontSize?: number;
+  bidirectionalLanguage?: string;
 };
 
 export function RealtimeTranslation({
@@ -57,6 +58,7 @@ export function RealtimeTranslation({
   hasMicPermission,
   permissionError,
   transcriptFontSize: transcriptFontSizeProp,
+  bidirectionalLanguage: bidirectionalLanguageProp,
 }: RealtimeTranslationProps) {
   const [outputLanguage, setOutputLanguage] = useState(DEFAULT_OUTPUT_LANGUAGE);
   const [languageModalVisible, setLanguageModalVisible] = useState(false);
@@ -66,7 +68,8 @@ export function RealtimeTranslation({
   const [audioOutput, setAudioOutput] = useState<AudioOutput>("handset");
   const [isMuted, setIsMuted] = useState(false);
   const [isBidirectional, setIsBidirectional] = useState(DEFAULT_BIDIRECTIONAL_ENABLED);
-  const [bidirectionalLanguage, setBidirectionalLanguage] = useState(DEFAULT_BIDIRECTIONAL_LANGUAGE);
+  const [bidirectionalLanguageLocal, setBidirectionalLanguage] = useState(DEFAULT_BIDIRECTIONAL_LANGUAGE);
+  const bidirectionalLanguage = bidirectionalLanguageProp ?? bidirectionalLanguageLocal;
   const [statusText, setStatusText] = useState("Ready · speak in any language");
   const [inputTranscript, setInputTranscript] = useState("");
   const [outputTranscript, setOutputTranscript] = useState("");
