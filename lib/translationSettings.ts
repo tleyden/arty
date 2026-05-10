@@ -10,6 +10,8 @@ const TRANSCRIPT_FONT_SIZE_KEY = "@vibemachine/translationTranscriptFontSize";
 const OUTPUT_LANGUAGE_KEY = "@vibemachine/translationOutputLanguage";
 
 export const DEFAULT_TRANSLATION_IDLE_TIMEOUT_SECONDS = 60;
+export const MIN_TRANSLATION_IDLE_TIMEOUT_SECONDS = 10;
+export const MAX_TRANSLATION_IDLE_TIMEOUT_SECONDS = 300;
 export const DEFAULT_OUTPUT_LANGUAGE = "de";
 export const DEFAULT_TRANSLATION_NOISE_REDUCTION: NoiseReductionType =
   "disabled";
@@ -32,9 +34,10 @@ export const loadTranslationIdleTimeoutSeconds = async (): Promise<number> => {
       return DEFAULT_TRANSLATION_IDLE_TIMEOUT_SECONDS;
     }
     const parsed = parseInt(stored, 10);
-    return Number.isFinite(parsed)
-      ? parsed
-      : DEFAULT_TRANSLATION_IDLE_TIMEOUT_SECONDS;
+    if (!Number.isFinite(parsed)) {
+      return DEFAULT_TRANSLATION_IDLE_TIMEOUT_SECONDS;
+    }
+    return Math.min(MAX_TRANSLATION_IDLE_TIMEOUT_SECONDS, Math.max(MIN_TRANSLATION_IDLE_TIMEOUT_SECONDS, parsed));
   } catch {
     return DEFAULT_TRANSLATION_IDLE_TIMEOUT_SECONDS;
   }
@@ -44,7 +47,8 @@ export const saveTranslationIdleTimeoutSeconds = async (
   seconds: number,
 ): Promise<void> => {
   try {
-    await AsyncStorage.setItem(IDLE_TIMEOUT_KEY, String(seconds));
+    const clamped = Math.min(MAX_TRANSLATION_IDLE_TIMEOUT_SECONDS, Math.max(MIN_TRANSLATION_IDLE_TIMEOUT_SECONDS, seconds));
+    await AsyncStorage.setItem(IDLE_TIMEOUT_KEY, String(clamped));
   } catch {
     // Ignore persistence errors; UI will fall back to default.
   }

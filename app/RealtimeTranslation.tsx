@@ -318,7 +318,11 @@ export function RealtimeTranslation({
 
   const handleToggleMute = useCallback((nextValue: boolean) => {
     setIsMuted(nextValue);
-    muteUnmuteOutgoingAudio(nextValue);
+    try {
+      muteUnmuteOutgoingAudio(nextValue);
+    } catch (e) {
+      log.warn("[RealtimeTranslation] muteUnmuteOutgoingAudio unavailable", {}, { error: e });
+    }
   }, []);
 
   const handleSelectLanguage = useCallback((code: string) => {

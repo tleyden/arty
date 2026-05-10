@@ -91,14 +91,13 @@ export const ConfigureTranslation: React.FC<ConfigureTranslationProps> = ({
   }, [visible]);
 
   const adjustIdleTimeout = (delta: number) => {
-    const next = Math.min(
-      MAX_IDLE_TIMEOUT,
-      Math.max(MIN_IDLE_TIMEOUT, idleTimeout + delta),
-    );
-    if (next !== idleTimeout) {
-      setIdleTimeout(next);
-      void saveTranslationIdleTimeoutSeconds(next);
-    }
+    setIdleTimeout((prev) => {
+      const next = Math.min(MAX_IDLE_TIMEOUT, Math.max(MIN_IDLE_TIMEOUT, prev + delta));
+      if (next !== prev) {
+        void saveTranslationIdleTimeoutSeconds(next);
+      }
+      return next;
+    });
   };
 
   const handleNoiseReductionChange = (value: NoiseReductionType) => {
