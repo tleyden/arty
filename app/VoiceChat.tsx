@@ -18,6 +18,7 @@ import { log } from "../lib/logger";
 import { composeMainPrompt } from "../lib/mainPrompt";
 import { TokenUsageTracker } from "../lib/tokenUsageTracker";
 import { loadTranscriptionPreference } from "../lib/transcriptionPreference";
+import type { ChatMode } from "../components/settings/ConfigureChatMode";
 import type { VadMode } from "../lib/vadPreference";
 import VmWebrtcModule, {
   closeOpenAIConnectionAsync,
@@ -52,6 +53,7 @@ type VoiceChatProps = {
   maxConversationTurns: number;
   disableCompaction: boolean;
   selectedLanguage: string;
+  chatMode: ChatMode;
 };
 
 export function VoiceChat({
@@ -65,6 +67,7 @@ export function VoiceChat({
   maxConversationTurns,
   disableCompaction,
   selectedLanguage,
+  chatMode,
 }: VoiceChatProps) {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isSessionActive, setIsSessionActive] = useState(false);
@@ -656,8 +659,11 @@ export function VoiceChat({
     if (isConnecting) {
       return "Connecting…";
     }
+    if (chatMode === "realtimeTranslation") {
+      return isSessionActive ? "⏹️ Stop Translating" : "🎙️🌐 Start Translating";
+    }
     return isSessionActive ? "⏹️ Stop Chatting" : "🎙️ Start Chatting";
-  }, [isConnecting, isSessionActive, isStopping]);
+  }, [isConnecting, isSessionActive, isStopping, chatMode]);
 
   const sessionButtonAccessibilityLabel = useMemo(() => {
     if (isSessionActive) {

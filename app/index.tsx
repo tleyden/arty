@@ -526,7 +526,9 @@ export default function Index() {
   }, []);
 
   const renderChatSurface =
-    selectedChatMode === "voice" ? (
+    selectedChatMode === "text" ? (
+      <TextChat mainPromptAddition={mainPromptAddition} />
+    ) : (
       <VoiceChat
         baseConnectionOptions={baseConnectionOptions}
         hasMicPermission={hasMicPermission}
@@ -538,9 +540,8 @@ export default function Index() {
         maxConversationTurns={maxConversationTurns}
         disableCompaction={disableCompaction}
         selectedLanguage={selectedLanguage}
+        chatMode={selectedChatMode}
       />
-    ) : (
-      <TextChat mainPromptAddition={mainPromptAddition} />
     );
 
   return (
