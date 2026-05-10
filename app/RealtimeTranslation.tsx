@@ -81,7 +81,7 @@ export function RealtimeTranslation({
   const [isMuted, setIsMuted] = useState(false);
   const [isAdvancedExpanded, setIsAdvancedExpanded] = useState(false);
   const [frequencyBins, setFrequencyBins] = useState<number[]>([]);
-  const [statusText, setStatusText] = useState("Ready");
+  const [statusText, setStatusText] = useState("Ready · speak in any language");
   const [inputTranscript, setInputTranscript] = useState("");
   const [outputTranscript, setOutputTranscript] = useState("");
 
@@ -287,7 +287,7 @@ export function RealtimeTranslation({
   return (
     <View style={styles.content}>
       <View style={styles.languagePickerContainer}>
-        <Text style={styles.languagePickerLabel}>Translate to</Text>
+        <Text style={styles.languagePickerLabel}>Translate from your native tongue to</Text>
         <View style={styles.languagePickerRow}>
           {featuredLanguages.map((lang) => {
             const isSelected = outputLanguage === lang.code;
