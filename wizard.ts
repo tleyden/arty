@@ -187,7 +187,7 @@ const BUILD_OPTIONS: BuildOption[] = [
     name: "Run Xcodebuild",
     flag: "build-ios-local",
     command:
-      "xcodebuild build -workspace ios/vibemachine.xcworkspace -scheme vibemachine -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' | xcpretty || xcodebuild build -workspace ios/vibemachine.xcworkspace -scheme vibemachine -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator'",
+      "set -o pipefail && if test -x \"$(command -v xcpretty)\"; then xcodebuild build -workspace ios/vibemachine.xcworkspace -scheme vibemachine -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' | xcpretty; else xcodebuild build -workspace ios/vibemachine.xcworkspace -scheme vibemachine -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator'; fi",
     description: "Compile Swift without launching (same compiler as Xcode, no EAS overhead)",
   },
   {
