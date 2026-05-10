@@ -10,6 +10,8 @@ import {
   Text,
   View,
   type AppStateStatus,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
 } from "react-native";
 import { MiniVisualizer } from "../components/AudioVisualizer";
 import { MuteToggle } from "../components/MuteToggle";
@@ -99,6 +101,8 @@ export function RealtimeTranslation({
     DEFAULT_TRANSLATION_IDLE_TIMEOUT_SECONDS,
   );
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollViewRef = useRef<ScrollView>(null);
+  const autoScrollRef = useRef(true);
 
   useEffect(() => {
     loadTranslationIdleTimeoutSeconds().then((seconds) => {
@@ -362,6 +366,21 @@ export function RealtimeTranslation({
     muteUnmuteOutgoingAudio(nextValue);
   }, []);
 
+  useEffect(() => {
+    if (autoScrollRef.current) {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }
+  }, [inputTranscript, outputTranscript]);
+
+  const SCROLL_BOTTOM_THRESHOLD = 20;
+
+  const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const distanceFromBottom =
+      contentSize.height - layoutMeasurement.height - contentOffset.y;
+    autoScrollRef.current = distanceFromBottom <= SCROLL_BOTTOM_THRESHOLD;
+  };
+
   const isSpeakerphone = audioOutput === "speakerphone";
   const isButtonDisabled = isSessionActive
     ? isStopping
@@ -527,8 +546,12 @@ export function RealtimeTranslation({
 
         {showTranscripts ? (
           <ScrollView
+            ref={scrollViewRef}
             style={styles.translationScroll}
             contentContainerStyle={styles.transcriptContent}
+            onScroll={handleScroll}
+            scrollEventThrottle={16}
+            onScrollBeginDrag={() => { autoScrollRef.current = false; }}
           >
             {inputTranscript ? (
               <View style={styles.transcriptBlock}>
