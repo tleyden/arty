@@ -415,17 +415,22 @@ final class OpenAIWebRTCClient: OpenAIWebRTCBase {
     }
 
     private func buildTools() -> [[String: Any]] {
-        let definitionsByName: [String: [String: Any]] = Dictionary(
-            uniqueKeysWithValues: toolDefinitions.compactMap { definition in
-                guard let name = definition["name"] as? String, !name.isEmpty else {
-                    self.logger.log(
-                        "[VmWebrtc] Encountered tool definition without a valid name. Skipping.",
-                        attributes: logAttributes(for: .warn))
-                    return nil
-                }
-                return (name, definition)
+        let namedDefinitions: [(String, [String: Any])] = toolDefinitions.compactMap { definition in
+            guard let name = definition["name"] as? String, !name.isEmpty else {
+                self.logger.log(
+                    "[VmWebrtc] Encountered tool definition without a valid name. Skipping.",
+                    attributes: logAttributes(for: .warn))
+                return nil
             }
-        )
+            return (name, definition)
+        }
+        let definitionsByName: [String: [String: Any]] = Dictionary(namedDefinitions, uniquingKeysWith: { first, second in
+            let name = (first["name"] as? String) ?? "<unknown>"
+            self.logger.log(
+                "[VmWebrtc] Duplicate tool definition for name '\(name)'; keeping first.",
+                attributes: logAttributes(for: .warn))
+            return first
+        })
 
         let legacyDelegates: [BaseTool?] = [
             githubConnectorDelegate,
