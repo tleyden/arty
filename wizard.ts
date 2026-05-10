@@ -184,6 +184,13 @@ const BUILD_OPTIONS: BuildOption[] = [
     description: "Build and submit iOS app to App Store",
   },
   {
+    name: "Run Xcodebuild",
+    flag: "build-ios-local",
+    command:
+      "xcodebuild build -workspace ios/vibemachine.xcworkspace -scheme vibemachine -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' | xcpretty || xcodebuild build -workspace ios/vibemachine.xcworkspace -scheme vibemachine -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator'",
+    description: "Compile Swift without launching (same compiler as Xcode, no EAS overhead)",
+  },
+  {
     name: "Open in Xcode",
     flag: "open-xcode",
     command: "xed ios",
