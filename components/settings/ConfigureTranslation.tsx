@@ -50,11 +50,13 @@ const NOISE_REDUCTION_OPTIONS: {
 interface ConfigureTranslationProps {
   visible: boolean;
   onClose: () => void;
+  onFontSizeChange?: (size: number) => void;
 }
 
 export const ConfigureTranslation: React.FC<ConfigureTranslationProps> = ({
   visible,
   onClose,
+  onFontSizeChange,
 }) => {
   const [idleTimeout, setIdleTimeout] = useState(
     DEFAULT_TRANSLATION_IDLE_TIMEOUT_SECONDS,
@@ -122,6 +124,7 @@ export const ConfigureTranslation: React.FC<ConfigureTranslationProps> = ({
     if (next !== transcriptFontSize) {
       setTranscriptFontSize(next);
       void saveTranscriptFontSize(next);
+      onFontSizeChange?.(next);
     }
   };
 

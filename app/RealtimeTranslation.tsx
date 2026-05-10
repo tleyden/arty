@@ -76,12 +76,14 @@ type RealtimeTranslationProps = {
   baseConnectionOptions: BaseOpenAIConnectionOptions | null;
   hasMicPermission: boolean;
   permissionError: string | null;
+  transcriptFontSize?: number;
 };
 
 export function RealtimeTranslation({
   baseConnectionOptions,
   hasMicPermission,
   permissionError,
+  transcriptFontSize: transcriptFontSizeProp,
 }: RealtimeTranslationProps) {
   const [outputLanguage, setOutputLanguage] = useState("de");
   const [languageModalVisible, setLanguageModalVisible] = useState(false);
@@ -95,7 +97,8 @@ export function RealtimeTranslation({
   const [statusText, setStatusText] = useState("Ready · speak in any language");
   const [inputTranscript, setInputTranscript] = useState("");
   const [outputTranscript, setOutputTranscript] = useState("");
-  const [transcriptFontSize, setTranscriptFontSize] = useState(DEFAULT_TRANSCRIPT_FONT_SIZE);
+  const [transcriptFontSizeLocal, setTranscriptFontSizeLocal] = useState(DEFAULT_TRANSCRIPT_FONT_SIZE);
+  const transcriptFontSize = transcriptFontSizeProp ?? transcriptFontSizeLocal;
 
   const idleTimeoutSecondsRef = useRef(
     DEFAULT_TRANSLATION_IDLE_TIMEOUT_SECONDS,
@@ -108,7 +111,7 @@ export function RealtimeTranslation({
     loadTranslationIdleTimeoutSeconds().then((seconds) => {
       idleTimeoutSecondsRef.current = seconds;
     });
-    loadTranscriptFontSize().then(setTranscriptFontSize);
+    loadTranscriptFontSize().then(setTranscriptFontSizeLocal);
   }, []);
 
   const resetIdleTimer = useCallback(() => {

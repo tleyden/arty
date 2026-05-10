@@ -64,6 +64,10 @@ import {
   loadVoicePreference,
   saveVoicePreference,
 } from "../lib/voicePreference";
+import {
+  DEFAULT_TRANSCRIPT_FONT_SIZE,
+  loadTranscriptFontSize,
+} from "../lib/translationSettings";
 import { ConfigureApiKeyScreen } from "./ConfigureApiKey";
 import { OnboardingWizard } from "./OnboardingWizard";
 import RealtimeTranslation from "./RealtimeTranslation";
@@ -139,6 +143,7 @@ export default function Index() {
     useState(false);
   const [translationConfigVisible, setTranslationConfigVisible] =
     useState(false);
+  const [transcriptFontSize, setTranscriptFontSize] = useState(DEFAULT_TRANSCRIPT_FONT_SIZE);
   const [onboardingVisible, setOnboardingVisible] = useState(false);
   const [onboardingCheckToken, setOnboardingCheckToken] = useState(0);
   const [onboardingCompletionToken, setOnboardingCompletionToken] = useState(0);
@@ -302,6 +307,19 @@ export default function Index() {
     };
 
     hydrateLanguagePreference();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    loadTranscriptFontSize().then((stored) => {
+      if (!isMounted) return;
+      setTranscriptFontSize(stored);
+    });
 
     return () => {
       isMounted = false;
@@ -566,6 +584,7 @@ export default function Index() {
         baseConnectionOptions={baseConnectionOptions}
         hasMicPermission={hasMicPermission}
         permissionError={permissionError}
+        transcriptFontSize={transcriptFontSize}
       />
     ) : (
       <VoiceChat
@@ -652,6 +671,7 @@ export default function Index() {
       <ConfigureTranslation
         visible={translationConfigVisible}
         onClose={() => setTranslationConfigVisible(false)}
+        onFontSizeChange={setTranscriptFontSize}
       />
       <ConfigureToolsSheet
         visible={configureToolsVisible}
