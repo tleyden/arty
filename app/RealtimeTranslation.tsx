@@ -45,9 +45,9 @@ type TranslationLanguage = {
 };
 
 const TRANSLATION_OUTPUT_LANGUAGES: TranslationLanguage[] = [
-  { code: "de", name: "German", flag: "🇩🇪" },
   { code: "en", name: "English", flag: "🇺🇸" },
   { code: "es", name: "Spanish", flag: "🇪🇸" },
+  { code: "de", name: "German", flag: "🇩🇪" },
   { code: "pt", name: "Portuguese", flag: "🇧🇷" },
   { code: "fr", name: "French", flag: "🇫🇷" },
   { code: "ja", name: "Japanese", flag: "🇯🇵" },
@@ -92,7 +92,9 @@ export function RealtimeTranslation({
   const [inputTranscript, setInputTranscript] = useState("");
   const [outputTranscript, setOutputTranscript] = useState("");
 
-  const idleTimeoutSecondsRef = useRef(DEFAULT_TRANSLATION_IDLE_TIMEOUT_SECONDS);
+  const idleTimeoutSecondsRef = useRef(
+    DEFAULT_TRANSLATION_IDLE_TIMEOUT_SECONDS,
+  );
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -227,7 +229,10 @@ export function RealtimeTranslation({
     if (isSessionActive || isConnecting) return;
 
     if (Platform.OS !== "ios") {
-      Alert.alert("Translation", "Voice sessions are currently limited to iOS.");
+      Alert.alert(
+        "Translation",
+        "Voice sessions are currently limited to iOS.",
+      );
       return;
     }
     if (!hasMicPermission) {
@@ -261,16 +266,26 @@ export function RealtimeTranslation({
       log.info(
         "Starting translation session",
         {},
-        { outputLanguage, audioOutput, noiseReductionType, transcriptionEnabled, transcriptionModel },
+        {
+          outputLanguage,
+          audioOutput,
+          noiseReductionType,
+          transcriptionEnabled,
+          transcriptionModel,
+        },
       );
-      const state: OpenAIConnectionState = await openTranslationConnectionAsync({
-        apiKey: baseConnectionOptions.apiKey,
-        baseUrl: baseConnectionOptions.baseUrl,
-        audioOutput,
-        outputLanguage,
-        ...(noiseReductionType !== "disabled" && { noiseReductionType }),
-        ...(transcriptionEnabled && { inputTranscriptionModel: transcriptionModel }),
-      });
+      const state: OpenAIConnectionState = await openTranslationConnectionAsync(
+        {
+          apiKey: baseConnectionOptions.apiKey,
+          baseUrl: baseConnectionOptions.baseUrl,
+          audioOutput,
+          outputLanguage,
+          ...(noiseReductionType !== "disabled" && { noiseReductionType }),
+          ...(transcriptionEnabled && {
+            inputTranscriptionModel: transcriptionModel,
+          }),
+        },
+      );
       log.info("Translation session resolved", {}, { state });
       const connected = state === "connected" || state === "completed";
       setIsSessionActive(connected);
@@ -279,10 +294,13 @@ export function RealtimeTranslation({
       log.error(
         "Failed to start translation session",
         {},
-        { errorMessage: error instanceof Error ? error.message : String(error) },
+        {
+          errorMessage: error instanceof Error ? error.message : String(error),
+        },
         error,
       );
-      const message = error instanceof Error ? error.message : "Unexpected error";
+      const message =
+        error instanceof Error ? error.message : "Unexpected error";
       Alert.alert("Translation", message);
       setIsSessionActive(false);
       setFrequencyBins([]);
@@ -302,16 +320,20 @@ export function RealtimeTranslation({
     if (!isSessionActive || isStopping) return;
     setIsStopping(true);
     try {
-      const state: OpenAIConnectionState = await closeTranslationConnectionAsync();
+      const state: OpenAIConnectionState =
+        await closeTranslationConnectionAsync();
       log.info("Translation session closed", {}, { state });
     } catch (error) {
       log.error(
         "Failed to stop translation session",
         {},
-        { errorMessage: error instanceof Error ? error.message : String(error) },
+        {
+          errorMessage: error instanceof Error ? error.message : String(error),
+        },
         error,
       );
-      const message = error instanceof Error ? error.message : "Unexpected error";
+      const message =
+        error instanceof Error ? error.message : "Unexpected error";
       Alert.alert("Translation", message);
     } finally {
       setIsStopping(false);
@@ -350,7 +372,9 @@ export function RealtimeTranslation({
     <View style={styles.content}>
       {/* TOP: language picker — fixed, always visible */}
       <View style={styles.topSection}>
-        <Text style={styles.languagePickerLabel}>Translate from your native tongue to</Text>
+        <Text style={styles.languagePickerLabel}>
+          Translate from your native tongue to
+        </Text>
         <View style={styles.languagePickerRow}>
           {featuredLanguages.map((lang) => {
             const isSelected = outputLanguage === lang.code;
@@ -388,11 +412,15 @@ export function RealtimeTranslation({
           >
             {(() => {
               const selected = !FEATURED_LANGUAGE_CODES.includes(outputLanguage)
-                ? TRANSLATION_OUTPUT_LANGUAGES.find((l) => l.code === outputLanguage)
+                ? TRANSLATION_OUTPUT_LANGUAGES.find(
+                    (l) => l.code === outputLanguage,
+                  )
                 : null;
               return (
                 <>
-                  <Text style={styles.langFlag}>{selected ? selected.flag : "🌐"}</Text>
+                  <Text style={styles.langFlag}>
+                    {selected ? selected.flag : "🌐"}
+                  </Text>
                   <Text
                     style={[
                       styles.langName,
@@ -451,9 +479,7 @@ export function RealtimeTranslation({
                     >
                       {lang.name}
                     </Text>
-                    {isSelected && (
-                      <Text style={styles.modalCheckmark}>✓</Text>
-                    )}
+                    {isSelected && <Text style={styles.modalCheckmark}>✓</Text>}
                   </Pressable>
                 );
               })}
