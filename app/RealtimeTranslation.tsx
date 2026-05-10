@@ -1,0 +1,512 @@
+import { useCallback, useEffect, useState } from "react";
+import {
+  Alert,
+  AppState,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  type AppStateStatus,
+} from "react-native";
+import { MiniVisualizer } from "../components/AudioVisualizer";
+import { MuteToggle } from "../components/MuteToggle";
+import { SpeakerModeToggle } from "../components/SpeakerModeToggle";
+import { log } from "../lib/logger";
+import type {
+  AudioMetricsEventPayload,
+  BaseOpenAIConnectionOptions,
+  OpenAIConnectionState,
+  RealtimeErrorEventPayload,
+  VoiceSessionStatusEventPayload,
+} from "../modules/vm-webrtc";
+import VmWebrtcTranslatorModule, {
+  closeTranslationConnectionAsync,
+  muteUnmuteOutgoingAudio,
+  openTranslationConnectionAsync,
+  type TranslationTranscriptEventPayload,
+} from "../modules/vm-webrtc/src/VmWebrtcTranslatorModule";
+
+type AudioOutput = "handset" | "speakerphone";
+
+type RealtimeTranslationProps = {
+  baseConnectionOptions: BaseOpenAIConnectionOptions | null;
+  hasMicPermission: boolean;
+  permissionError: string | null;
+  selectedLanguage: string;
+};
+
+export function RealtimeTranslation({
+  baseConnectionOptions,
+  hasMicPermission,
+  permissionError,
+  selectedLanguage,
+}: RealtimeTranslationProps) {
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [isSessionActive, setIsSessionActive] = useState(false);
+  const [isStopping, setIsStopping] = useState(false);
+  const [audioOutput, setAudioOutput] = useState<AudioOutput>("handset");
+  const [isMuted, setIsMuted] = useState(false);
+  const [isAdvancedExpanded, setIsAdvancedExpanded] = useState(false);
+  const [frequencyBins, setFrequencyBins] = useState<number[]>([]);
+  const [statusText, setStatusText] = useState("Ready");
+  const [inputTranscript, setInputTranscript] = useState("");
+  const [outputTranscript, setOutputTranscript] = useState("");
+
+  useEffect(() => {
+    if (!VmWebrtcTranslatorModule?.addListener) return undefined;
+    const sub = VmWebrtcTranslatorModule.addListener(
+      "onVoiceSessionStatus",
+      (payload: VoiceSessionStatusEventPayload) => {
+        setStatusText(payload.status_update);
+      },
+    );
+    return () => sub.remove?.();
+  }, []);
+
+  useEffect(() => {
+    if (!VmWebrtcTranslatorModule?.addListener) return undefined;
+    const sub = VmWebrtcTranslatorModule.addListener(
+      "onTranslationInputTranscript",
+      (payload: TranslationTranscriptEventPayload) => {
+        log.debug("Translation input delta", {}, { delta: payload.delta });
+        setInputTranscript((prev) => prev + payload.delta);
+      },
+    );
+    return () => sub.remove?.();
+  }, []);
+
+  useEffect(() => {
+    if (!VmWebrtcTranslatorModule?.addListener) return undefined;
+    const sub = VmWebrtcTranslatorModule.addListener(
+      "onTranslationOutputTranscript",
+      (payload: TranslationTranscriptEventPayload) => {
+        log.debug("Translation output delta", {}, { delta: payload.delta });
+        setOutputTranscript((prev) => prev + payload.delta);
+      },
+    );
+    return () => sub.remove?.();
+  }, []);
+
+  useEffect(() => {
+    if (!VmWebrtcTranslatorModule?.addListener) return undefined;
+    const sub = VmWebrtcTranslatorModule.addListener(
+      "onAudioMetrics",
+      (payload: AudioMetricsEventPayload) => {
+        if (Array.isArray(payload.fftBins)) {
+          const normalized = (payload.fftBins as number[]).map((db) => {
+            const clamped = Math.max(-120, Math.min(30, db));
+            return Math.pow((clamped + 120) / 150, 1.5);
+          });
+          setFrequencyBins(normalized);
+        }
+      },
+    );
+    return () => sub.remove?.();
+  }, []);
+
+  useEffect(() => {
+    if (!VmWebrtcTranslatorModule?.addListener) return undefined;
+    const sub = VmWebrtcTranslatorModule.addListener(
+      "onRealtimeError",
+      (payload: RealtimeErrorEventPayload) => {
+        log.error(
+          "Translation session error",
+          {},
+          {
+            errorType: payload?.error?.type,
+            errorCode: payload?.error?.code,
+            errorMessage: payload?.error?.message,
+          },
+        );
+      },
+    );
+    return () => sub.remove?.();
+  }, []);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener(
+      "change",
+      (nextAppState: AppStateStatus) => {
+        log.info(
+          "App state changed during translation session",
+          {},
+          { newState: nextAppState, isSessionActive },
+        );
+      },
+    );
+    return () => sub.remove();
+  }, [isSessionActive]);
+
+  const handleStart = useCallback(async () => {
+    if (isSessionActive || isConnecting) return;
+
+    if (Platform.OS !== "ios") {
+      Alert.alert("Translation", "Voice sessions are currently limited to iOS.");
+      return;
+    }
+    if (!hasMicPermission) {
+      Alert.alert(
+        "Translation",
+        "Please enable microphone access to start a session.",
+      );
+      return;
+    }
+    if (!baseConnectionOptions) {
+      Alert.alert(
+        "Translation",
+        "Missing EXPO_PUBLIC_OPENAI_API_KEY environment variable.",
+      );
+      return;
+    }
+
+    setIsConnecting(true);
+    setIsSessionActive(false);
+    setInputTranscript("");
+    setOutputTranscript("");
+
+    try {
+      log.info(
+        "Starting translation session",
+        {},
+        { outputLanguage: selectedLanguage, audioOutput },
+      );
+      const state: OpenAIConnectionState = await openTranslationConnectionAsync({
+        apiKey: baseConnectionOptions.apiKey,
+        baseUrl: baseConnectionOptions.baseUrl,
+        audioOutput,
+        outputLanguage: selectedLanguage || "English",
+      });
+      log.info("Translation session resolved", {}, { state });
+      const connected = state === "connected" || state === "completed";
+      setIsSessionActive(connected);
+      if (!connected) setFrequencyBins([]);
+    } catch (error) {
+      log.error(
+        "Failed to start translation session",
+        {},
+        { errorMessage: error instanceof Error ? error.message : String(error) },
+        error,
+      );
+      const message = error instanceof Error ? error.message : "Unexpected error";
+      Alert.alert("Translation", message);
+      setIsSessionActive(false);
+      setFrequencyBins([]);
+    } finally {
+      setIsConnecting(false);
+    }
+  }, [
+    audioOutput,
+    baseConnectionOptions,
+    hasMicPermission,
+    isConnecting,
+    isSessionActive,
+    selectedLanguage,
+  ]);
+
+  const handleStop = useCallback(async () => {
+    if (!isSessionActive || isStopping) return;
+    setIsStopping(true);
+    try {
+      const state: OpenAIConnectionState = await closeTranslationConnectionAsync();
+      log.info("Translation session closed", {}, { state });
+    } catch (error) {
+      log.error(
+        "Failed to stop translation session",
+        {},
+        { errorMessage: error instanceof Error ? error.message : String(error) },
+        error,
+      );
+      const message = error instanceof Error ? error.message : "Unexpected error";
+      Alert.alert("Translation", message);
+    } finally {
+      setIsStopping(false);
+      setIsSessionActive(false);
+      setIsConnecting(false);
+      setFrequencyBins([]);
+    }
+  }, [isSessionActive, isStopping]);
+
+  const handleToggleSpeakerphone = useCallback((nextValue: boolean) => {
+    setAudioOutput(nextValue ? "speakerphone" : "handset");
+  }, []);
+
+  const handleToggleMute = useCallback((nextValue: boolean) => {
+    setIsMuted(nextValue);
+    muteUnmuteOutgoingAudio(nextValue);
+  }, []);
+
+  const isSpeakerphone = audioOutput === "speakerphone";
+  const isButtonDisabled = isSessionActive
+    ? isStopping
+    : isConnecting || !hasMicPermission;
+
+  const buttonLabel = isStopping
+    ? "Stopping…"
+    : isConnecting
+      ? "Connecting…"
+      : isSessionActive
+        ? "⏹️ Stop Translating"
+        : "🎙️🌐 Start Translating";
+
+  const showTranscripts =
+    inputTranscript.length > 0 || outputTranscript.length > 0;
+
+  return (
+    <View style={styles.content}>
+      <View style={styles.visualizerContainer}>
+        <MiniVisualizer
+          active={isSessionActive || frequencyBins.length > 0}
+          mode="user"
+          barCount={8}
+          height={80}
+          mirror={false}
+          gap={6}
+          radius={4}
+          smooth={0.75}
+          samples={frequencyBins}
+        />
+      </View>
+
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={
+          isSessionActive ? "Stop translating" : "Start translating"
+        }
+        style={({ pressed }) => {
+          const base: any[] = [styles.buttonBase];
+          base.push(isSessionActive ? styles.stopButton : styles.startButton);
+          if (isButtonDisabled) {
+            base.push(styles.disabledButton);
+          } else {
+            base.push(styles.buttonShadow);
+            if (pressed) {
+              base.push(
+                isSessionActive
+                  ? styles.stopButtonPressed
+                  : styles.startButtonPressed,
+              );
+            }
+          }
+          return base;
+        }}
+        onPress={isSessionActive ? handleStop : handleStart}
+        disabled={isButtonDisabled}
+      >
+        <Text
+          style={[
+            styles.buttonText,
+            isSessionActive ? styles.stopButtonText : styles.startButtonText,
+            isButtonDisabled && styles.disabledButtonText,
+          ]}
+        >
+          {buttonLabel}
+        </Text>
+      </Pressable>
+
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Toggle advanced customization"
+        onPress={() => setIsAdvancedExpanded((p) => !p)}
+        style={({ pressed }) => [
+          styles.advancedToggle,
+          pressed && styles.advancedTogglePressed,
+        ]}
+      >
+        <Text style={styles.advancedToggleText}>Advanced</Text>
+        <Text style={styles.advancedToggleChevron}>
+          {isAdvancedExpanded ? "⌃" : "⌄"}
+        </Text>
+      </Pressable>
+
+      {isAdvancedExpanded ? (
+        <View style={styles.advancedPanel}>
+          <SpeakerModeToggle
+            value={isSpeakerphone}
+            onValueChange={handleToggleSpeakerphone}
+          />
+          <MuteToggle value={isMuted} onValueChange={handleToggleMute} />
+        </View>
+      ) : null}
+
+      {!hasMicPermission && permissionError ? (
+        <Text style={styles.permissionWarning}>{permissionError}</Text>
+      ) : null}
+
+      {showTranscripts ? (
+        <ScrollView
+          style={styles.transcriptScroll}
+          contentContainerStyle={styles.transcriptContent}
+        >
+          {inputTranscript ? (
+            <View style={styles.transcriptBlock}>
+              <Text style={styles.transcriptLabel}>You said</Text>
+              <Text style={styles.transcriptText}>{inputTranscript}</Text>
+            </View>
+          ) : null}
+          {outputTranscript ? (
+            <View style={styles.transcriptBlock}>
+              <Text style={styles.transcriptLabel}>Translation</Text>
+              <Text style={styles.transcriptText}>{outputTranscript}</Text>
+            </View>
+          ) : null}
+        </ScrollView>
+      ) : null}
+
+      <View style={styles.statusContainer} pointerEvents="none">
+        <Text style={styles.statusText}>{statusText}</Text>
+      </View>
+    </View>
+  );
+}
+
+export default RealtimeTranslation;
+
+const styles = StyleSheet.create({
+  content: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  visualizerContainer: {
+    width: "85%",
+    maxWidth: 280,
+    marginBottom: 40,
+    alignItems: "center",
+  },
+  buttonBase: {
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    minWidth: 220,
+    minHeight: 44,
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+  },
+  buttonShadow: {
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  startButton: {
+    backgroundColor: "#E8F5E8",
+    borderColor: "#4CAF50",
+    paddingVertical: 18,
+    paddingHorizontal: 30,
+    minWidth: 275,
+    minHeight: 55,
+  },
+  startButtonPressed: {
+    backgroundColor: "#DDEFD9",
+    borderColor: "#4CAF50",
+  },
+  stopButton: {
+    backgroundColor: "#FFE8E8",
+    borderColor: "#FF6B6B",
+  },
+  stopButtonPressed: {
+    backgroundColor: "#F9DADA",
+    borderColor: "#FF6B6B",
+  },
+  disabledButton: {
+    backgroundColor: "#F5F5F5",
+    borderColor: "#CCCCCC",
+  },
+  buttonText: {
+    fontSize: 18,
+    fontWeight: "600",
+  },
+  startButtonText: {
+    color: "#2E7D32",
+    fontWeight: "700",
+  },
+  stopButtonText: {
+    color: "#D32F2F",
+  },
+  disabledButtonText: {
+    color: "#8E8E93",
+  },
+  advancedToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    width: "100%",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E5E5EA",
+    backgroundColor: "#F8F8F8",
+    marginTop: 32,
+  },
+  advancedTogglePressed: {
+    backgroundColor: "#EFEFF4",
+  },
+  advancedToggleText: {
+    fontSize: 15,
+    fontWeight: "500",
+    color: "#1C1C1E",
+    opacity: 0.7,
+  },
+  advancedToggleChevron: {
+    fontSize: 18,
+    color: "#8E8E93",
+  },
+  advancedPanel: {
+    width: "100%",
+    borderWidth: 1,
+    borderColor: "#E5E5EA",
+    borderRadius: 16,
+    padding: 20,
+    marginTop: 16,
+    backgroundColor: "#FFFFFF",
+    gap: 16,
+    alignItems: "flex-start",
+  },
+  permissionWarning: {
+    marginTop: 12,
+    color: "#D0021B",
+    fontSize: 14,
+    textAlign: "center",
+  },
+  transcriptScroll: {
+    width: "100%",
+    maxHeight: 200,
+    marginTop: 24,
+  },
+  transcriptContent: {
+    gap: 16,
+    paddingHorizontal: 4,
+  },
+  transcriptBlock: {
+    gap: 4,
+  },
+  transcriptLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#8E8E93",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  transcriptText: {
+    fontSize: 15,
+    color: "#1C1C1E",
+    lineHeight: 22,
+  },
+  statusContainer: {
+    position: "absolute",
+    bottom: 70,
+    left: 16,
+    right: 16,
+    alignItems: "center",
+  },
+  statusText: {
+    fontSize: 14,
+    color: "#8E8E93",
+    textAlign: "center",
+  },
+});

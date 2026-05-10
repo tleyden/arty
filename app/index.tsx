@@ -60,6 +60,7 @@ import {
 } from "../lib/voicePreference";
 import { ConfigureApiKeyScreen } from "./ConfigureApiKey";
 import { OnboardingWizard } from "./OnboardingWizard";
+import RealtimeTranslation from "./RealtimeTranslation";
 import TextChat from "./TextChat";
 import VoiceChat from "./VoiceChat";
 
@@ -528,6 +529,13 @@ export default function Index() {
   const renderChatSurface =
     selectedChatMode === "text" ? (
       <TextChat mainPromptAddition={mainPromptAddition} />
+    ) : selectedChatMode === "realtimeTranslation" ? (
+      <RealtimeTranslation
+        baseConnectionOptions={baseConnectionOptions}
+        hasMicPermission={hasMicPermission}
+        permissionError={permissionError}
+        selectedLanguage={selectedLanguage}
+      />
     ) : (
       <VoiceChat
         baseConnectionOptions={baseConnectionOptions}
@@ -540,7 +548,6 @@ export default function Index() {
         maxConversationTurns={maxConversationTurns}
         disableCompaction={disableCompaction}
         selectedLanguage={selectedLanguage}
-        chatMode={selectedChatMode}
       />
     );
 

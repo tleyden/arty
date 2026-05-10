@@ -5,12 +5,13 @@ import {
   Platform,
   Pressable,
   StyleSheet,
-  Switch,
   Text,
   View,
   type AppStateStatus,
 } from "react-native";
 import { MiniVisualizer } from "../components/AudioVisualizer";
+import { MuteToggle } from "../components/MuteToggle";
+import { SpeakerModeToggle } from "../components/SpeakerModeToggle";
 import VoiceSessionStatus from "../components/VoiceSessionStatus";
 import { VoiceSpeedCustomization } from "../components/VoiceSpeedCustomization";
 import { loadShowRealtimeErrorAlerts } from "../lib/developerSettings";
@@ -18,7 +19,6 @@ import { log } from "../lib/logger";
 import { composeMainPrompt } from "../lib/mainPrompt";
 import { TokenUsageTracker } from "../lib/tokenUsageTracker";
 import { loadTranscriptionPreference } from "../lib/transcriptionPreference";
-import type { ChatMode } from "../components/settings/ConfigureChatMode";
 import type { VadMode } from "../lib/vadPreference";
 import VmWebrtcModule, {
   closeOpenAIConnectionAsync,
@@ -53,7 +53,6 @@ type VoiceChatProps = {
   maxConversationTurns: number;
   disableCompaction: boolean;
   selectedLanguage: string;
-  chatMode: ChatMode;
 };
 
 export function VoiceChat({
@@ -67,7 +66,6 @@ export function VoiceChat({
   maxConversationTurns,
   disableCompaction,
   selectedLanguage,
-  chatMode,
 }: VoiceChatProps) {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isSessionActive, setIsSessionActive] = useState(false);
@@ -659,11 +657,8 @@ export function VoiceChat({
     if (isConnecting) {
       return "Connecting…";
     }
-    if (chatMode === "realtimeTranslation") {
-      return isSessionActive ? "⏹️ Stop Translating" : "🎙️🌐 Start Translating";
-    }
     return isSessionActive ? "⏹️ Stop Chatting" : "🎙️ Start Chatting";
-  }, [isConnecting, isSessionActive, isStopping, chatMode]);
+  }, [isConnecting, isSessionActive, isStopping]);
 
   const sessionButtonAccessibilityLabel = useMemo(() => {
     if (isSessionActive) {
@@ -761,40 +756,11 @@ export function VoiceChat({
 
       {isAdvancedExpanded ? (
         <View style={styles.advancedPanel}>
-          <View style={styles.advancedRow}>
-            <View style={styles.advancedRowCopy}>
-              <Text style={styles.advancedRowLabel}>Speaker Mode</Text>
-            </View>
-            <View style={styles.advancedRowControl}>
-              <Text style={styles.advancedRowIcon}>
-                {isSpeakerphone ? "🔊" : "🔈"}
-              </Text>
-              <Switch
-                accessibilityLabel="Toggle speakerphone output"
-                value={isSpeakerphone}
-                onValueChange={handleToggleSpeakerphone}
-                ios_backgroundColor="#D1D1D6"
-                trackColor={{ false: "#D1D1D6", true: "#34C759" }}
-              />
-            </View>
-          </View>
-          <View style={styles.advancedRow}>
-            <View style={styles.advancedRowCopy}>
-              <Text style={styles.advancedRowLabel}>Mute</Text>
-            </View>
-            <View style={styles.advancedRowControl}>
-              <Text style={styles.advancedRowIcon}>
-                {isMuted ? "🔇" : "🎤"}
-              </Text>
-              <Switch
-                accessibilityLabel="Toggle microphone mute"
-                value={isMuted}
-                onValueChange={handleToggleMute}
-                ios_backgroundColor="#D1D1D6"
-                trackColor={{ false: "#D1D1D6", true: "#34C759" }}
-              />
-            </View>
-          </View>
+          <SpeakerModeToggle
+            value={isSpeakerphone}
+            onValueChange={handleToggleSpeakerphone}
+          />
+          <MuteToggle value={isMuted} onValueChange={handleToggleMute} />
           {/* Voice Speed - Hidden until fully functional */}
           {false && (
             <VoiceSpeedCustomization
@@ -931,33 +897,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     gap: 16,
     alignItems: "flex-start",
-  },
-  advancedRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 16,
-  },
-  advancedRowCopy: {
-    flex: 1,
-  },
-  advancedRowLabel: {
-    fontSize: 16,
-    fontWeight: "500",
-    color: "#1C1C1E",
-  },
-  advancedRowSubtitle: {
-    fontSize: 12,
-    color: "#8E8E93",
-    marginTop: 2,
-  },
-  advancedRowControl: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  advancedRowIcon: {
-    fontSize: 20,
   },
   permissionWarning: {
     marginTop: 12,
