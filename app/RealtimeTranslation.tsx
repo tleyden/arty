@@ -30,19 +30,40 @@ import VmWebrtcTranslatorModule, {
 
 type AudioOutput = "handset" | "speakerphone";
 
+type TranslationLanguage = {
+  code: string;
+  name: string;
+  flag: string;
+};
+
+const TRANSLATION_OUTPUT_LANGUAGES: TranslationLanguage[] = [
+  { code: "de", name: "German", flag: "🇩🇪" },
+  { code: "en", name: "English", flag: "🇺🇸" },
+  { code: "es", name: "Spanish", flag: "🇪🇸" },
+  { code: "pt", name: "Portuguese", flag: "🇧🇷" },
+  { code: "fr", name: "French", flag: "🇫🇷" },
+  { code: "ja", name: "Japanese", flag: "🇯🇵" },
+  { code: "ru", name: "Russian", flag: "🇷🇺" },
+  { code: "zh", name: "Chinese", flag: "🇨🇳" },
+  { code: "ko", name: "Korean", flag: "🇰🇷" },
+  { code: "hi", name: "Hindi", flag: "🇮🇳" },
+  { code: "id", name: "Indonesian", flag: "🇮🇩" },
+  { code: "vi", name: "Vietnamese", flag: "🇻🇳" },
+  { code: "it", name: "Italian", flag: "🇮🇹" },
+];
+
 type RealtimeTranslationProps = {
   baseConnectionOptions: BaseOpenAIConnectionOptions | null;
   hasMicPermission: boolean;
   permissionError: string | null;
-  selectedLanguage: string;
 };
 
 export function RealtimeTranslation({
   baseConnectionOptions,
   hasMicPermission,
   permissionError,
-  selectedLanguage,
 }: RealtimeTranslationProps) {
+  const [outputLanguage, setOutputLanguage] = useState("de");
   const [isConnecting, setIsConnecting] = useState(false);
   const [isSessionActive, setIsSessionActive] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
@@ -170,13 +191,13 @@ export function RealtimeTranslation({
       log.info(
         "Starting translation session",
         {},
-        { outputLanguage: selectedLanguage, audioOutput },
+        { outputLanguage, audioOutput },
       );
       const state: OpenAIConnectionState = await openTranslationConnectionAsync({
         apiKey: baseConnectionOptions.apiKey,
         baseUrl: baseConnectionOptions.baseUrl,
         audioOutput,
-        outputLanguage: selectedLanguage || "English",
+        outputLanguage,
       });
       log.info("Translation session resolved", {}, { state });
       const connected = state === "connected" || state === "completed";
@@ -202,7 +223,7 @@ export function RealtimeTranslation({
     hasMicPermission,
     isConnecting,
     isSessionActive,
-    selectedLanguage,
+    outputLanguage,
   ]);
 
   const handleStop = useCallback(async () => {
@@ -267,6 +288,41 @@ export function RealtimeTranslation({
           smooth={0.75}
           samples={frequencyBins}
         />
+      </View>
+
+      <View style={styles.languagePickerContainer}>
+        <Text style={styles.languagePickerLabel}>Translate to</Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.languagePickerScroll}
+          contentContainerStyle={styles.languagePickerContent}
+        >
+          {TRANSLATION_OUTPUT_LANGUAGES.map((lang) => {
+            const isSelected = outputLanguage === lang.code;
+            return (
+              <Pressable
+                key={lang.code}
+                onPress={() => !isSessionActive && setOutputLanguage(lang.code)}
+                style={[
+                  styles.langChip,
+                  isSelected && styles.langChipSelected,
+                  isSessionActive && styles.langChipDisabled,
+                ]}
+              >
+                <Text style={styles.langFlag}>{lang.flag}</Text>
+                <Text
+                  style={[
+                    styles.langName,
+                    isSelected && styles.langNameSelected,
+                  ]}
+                >
+                  {lang.name}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
       </View>
 
       <Pressable
@@ -508,5 +564,55 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#8E8E93",
     textAlign: "center",
+  },
+  languagePickerContainer: {
+    width: "100%",
+    marginBottom: 24,
+  },
+  languagePickerLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#8E8E93",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 10,
+    paddingHorizontal: 4,
+  },
+  languagePickerScroll: {
+    width: "100%",
+  },
+  languagePickerContent: {
+    gap: 8,
+    paddingHorizontal: 2,
+  },
+  langChip: {
+    alignItems: "center",
+    backgroundColor: "#F2F2F7",
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: "#E5E5EA",
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    gap: 4,
+    minWidth: 70,
+  },
+  langChipSelected: {
+    backgroundColor: "#E8F5E8",
+    borderColor: "#4CAF50",
+  },
+  langChipDisabled: {
+    opacity: 0.5,
+  },
+  langFlag: {
+    fontSize: 22,
+  },
+  langName: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#3C3C43",
+    textAlign: "center",
+  },
+  langNameSelected: {
+    color: "#2E7D32",
   },
 });

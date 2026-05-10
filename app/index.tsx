@@ -534,7 +534,6 @@ export default function Index() {
         baseConnectionOptions={baseConnectionOptions}
         hasMicPermission={hasMicPermission}
         permissionError={permissionError}
-        selectedLanguage={selectedLanguage}
       />
     ) : (
       <VoiceChat
