@@ -129,12 +129,11 @@ final class OpenAIWebRTCTranslatorClient: OpenAIWebRTCBase {
     override func dataChannelDidOpen() {
         // Translation sessions need only output language; no instructions, voice, tools, or
         // turn detection. Input language is auto-detected by the model.
-        var session: [String: Any] = [
-            "audio": ["output": ["language": outputLanguage]]
-        ]
+        var audio: [String: Any] = ["output": ["language": outputLanguage]]
         if let model = inputTranscriptionModel {
-            session["input_audio_transcription"] = ["model": model]
+            audio["input"] = ["transcription": ["model": model]]
         }
+        let session: [String: Any] = ["audio": audio]
 
         logger.log(
             "[VmWebrtc][Translator] Sending translation session config",
