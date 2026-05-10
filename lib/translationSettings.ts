@@ -4,11 +4,14 @@ const IDLE_TIMEOUT_KEY = "@vibemachine/translationIdleTimeoutSeconds";
 const NOISE_REDUCTION_KEY = "@vibemachine/translationNoiseReductionType";
 const INPUT_TRANSCRIPTION_ENABLED_KEY = "@vibemachine/translationInputTranscriptionEnabled";
 const INPUT_TRANSCRIPTION_MODEL_KEY = "@vibemachine/translationInputTranscriptionModel";
+const TRANSCRIPT_FONT_SIZE_KEY = "@vibemachine/translationTranscriptFontSize";
 
 export const DEFAULT_TRANSLATION_IDLE_TIMEOUT_SECONDS = 60;
 export const DEFAULT_TRANSLATION_NOISE_REDUCTION: NoiseReductionType = "disabled";
 export const DEFAULT_TRANSLATION_INPUT_TRANSCRIPTION_ENABLED = false;
 export const DEFAULT_TRANSLATION_INPUT_TRANSCRIPTION_MODEL = "gpt-realtime-whisper";
+export const TRANSCRIPT_FONT_SIZE_OPTIONS = [15, 22, 30, 38, 45];
+export const DEFAULT_TRANSCRIPT_FONT_SIZE = 15;
 
 export type NoiseReductionType = "disabled" | "near_field" | "far_field";
 
@@ -98,6 +101,27 @@ export const saveTranslationInputTranscriptionModel = async (
 ): Promise<void> => {
   try {
     await AsyncStorage.setItem(INPUT_TRANSCRIPTION_MODEL_KEY, model);
+  } catch {
+    // Ignore persistence errors; UI will fall back to default.
+  }
+};
+
+// --- Transcript font size ---
+
+export const loadTranscriptFontSize = async (): Promise<number> => {
+  try {
+    const stored = await AsyncStorage.getItem(TRANSCRIPT_FONT_SIZE_KEY);
+    if (stored === null) return DEFAULT_TRANSCRIPT_FONT_SIZE;
+    const parsed = parseInt(stored, 10);
+    return TRANSCRIPT_FONT_SIZE_OPTIONS.includes(parsed) ? parsed : DEFAULT_TRANSCRIPT_FONT_SIZE;
+  } catch {
+    return DEFAULT_TRANSCRIPT_FONT_SIZE;
+  }
+};
+
+export const saveTranscriptFontSize = async (size: number): Promise<void> => {
+  try {
+    await AsyncStorage.setItem(TRANSCRIPT_FONT_SIZE_KEY, String(size));
   } catch {
     // Ignore persistence errors; UI will fall back to default.
   }

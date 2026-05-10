@@ -2,15 +2,19 @@ import React, { useEffect, useState } from "react";
 import { Pressable, StyleSheet, Switch, Text, View } from "react-native";
 
 import {
+  DEFAULT_TRANSCRIPT_FONT_SIZE,
   DEFAULT_TRANSLATION_IDLE_TIMEOUT_SECONDS,
   DEFAULT_TRANSLATION_INPUT_TRANSCRIPTION_ENABLED,
   DEFAULT_TRANSLATION_INPUT_TRANSCRIPTION_MODEL,
   DEFAULT_TRANSLATION_NOISE_REDUCTION,
+  TRANSCRIPT_FONT_SIZE_OPTIONS,
   type NoiseReductionType,
+  loadTranscriptFontSize,
   loadTranslationIdleTimeoutSeconds,
   loadTranslationInputTranscriptionEnabled,
   loadTranslationInputTranscriptionModel,
   loadTranslationNoiseReductionType,
+  saveTranscriptFontSize,
   saveTranslationIdleTimeoutSeconds,
   saveTranslationInputTranscriptionEnabled,
   saveTranslationInputTranscriptionModel,
@@ -64,6 +68,9 @@ export const ConfigureTranslation: React.FC<ConfigureTranslationProps> = ({
   const [transcriptionModel] = useState(
     DEFAULT_TRANSLATION_INPUT_TRANSCRIPTION_MODEL,
   );
+  const [transcriptFontSize, setTranscriptFontSize] = useState(
+    DEFAULT_TRANSCRIPT_FONT_SIZE,
+  );
 
   useEffect(() => {
     if (!visible) return;
@@ -72,10 +79,12 @@ export const ConfigureTranslation: React.FC<ConfigureTranslationProps> = ({
       loadTranslationNoiseReductionType(),
       loadTranslationInputTranscriptionEnabled(),
       loadTranslationInputTranscriptionModel(),
-    ]).then(([timeout, noise, transcription]) => {
+      loadTranscriptFontSize(),
+    ]).then(([timeout, noise, transcription, , fontSize]) => {
       setIdleTimeout(timeout);
       setNoiseReduction(noise);
       setTranscriptionEnabled(transcription);
+      setTranscriptFontSize(fontSize);
     });
   }, [visible]);
 
@@ -100,6 +109,19 @@ export const ConfigureTranslation: React.FC<ConfigureTranslationProps> = ({
     void saveTranslationInputTranscriptionEnabled(enabled);
     if (enabled) {
       void saveTranslationInputTranscriptionModel(transcriptionModel);
+    }
+  };
+
+  const adjustFontSize = (delta: number) => {
+    const idx = TRANSCRIPT_FONT_SIZE_OPTIONS.indexOf(transcriptFontSize);
+    const nextIdx = Math.min(
+      TRANSCRIPT_FONT_SIZE_OPTIONS.length - 1,
+      Math.max(0, idx + delta),
+    );
+    const next = TRANSCRIPT_FONT_SIZE_OPTIONS[nextIdx];
+    if (next !== transcriptFontSize) {
+      setTranscriptFontSize(next);
+      void saveTranscriptFontSize(next);
     }
   };
 
@@ -207,6 +229,59 @@ export const ConfigureTranslation: React.FC<ConfigureTranslationProps> = ({
             <Text style={styles.modelValue}>{transcriptionModel}</Text>
           </View>
         )}
+
+        {/* Transcript Font Size */}
+        <View style={styles.optionCard}>
+          <View style={styles.optionCopy}>
+            <Text style={styles.optionTitle}>Transcript Font Size</Text>
+            <Text style={styles.optionSubtitle}>
+              Size of the transcription text displayed during translation.
+            </Text>
+          </View>
+          <View style={styles.stepper}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Decrease font size"
+              onPress={() => adjustFontSize(-1)}
+              disabled={transcriptFontSize <= TRANSCRIPT_FONT_SIZE_OPTIONS[0]}
+              style={({ pressed }) => [
+                styles.stepperButton,
+                transcriptFontSize <= TRANSCRIPT_FONT_SIZE_OPTIONS[0] &&
+                  styles.stepperButtonDisabled,
+                pressed &&
+                  transcriptFontSize > TRANSCRIPT_FONT_SIZE_OPTIONS[0] &&
+                  styles.stepperButtonPressed,
+              ]}
+            >
+              <Text style={styles.stepperButtonText}>−</Text>
+            </Pressable>
+            <Text style={styles.stepperValue}>{transcriptFontSize}pt</Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Increase font size"
+              onPress={() => adjustFontSize(1)}
+              disabled={
+                transcriptFontSize >=
+                TRANSCRIPT_FONT_SIZE_OPTIONS[TRANSCRIPT_FONT_SIZE_OPTIONS.length - 1]
+              }
+              style={({ pressed }) => [
+                styles.stepperButton,
+                transcriptFontSize >=
+                  TRANSCRIPT_FONT_SIZE_OPTIONS[
+                    TRANSCRIPT_FONT_SIZE_OPTIONS.length - 1
+                  ] && styles.stepperButtonDisabled,
+                pressed &&
+                  transcriptFontSize <
+                    TRANSCRIPT_FONT_SIZE_OPTIONS[
+                      TRANSCRIPT_FONT_SIZE_OPTIONS.length - 1
+                    ] &&
+                  styles.stepperButtonPressed,
+              ]}
+            >
+              <Text style={styles.stepperButtonText}>+</Text>
+            </Pressable>
+          </View>
+        </View>
       </View>
     </BottomSheet>
   );

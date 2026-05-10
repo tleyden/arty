@@ -16,7 +16,9 @@ import { MuteToggle } from "../components/MuteToggle";
 import { SpeakerModeToggle } from "../components/SpeakerModeToggle";
 import { log } from "../lib/logger";
 import {
+  DEFAULT_TRANSCRIPT_FONT_SIZE,
   DEFAULT_TRANSLATION_IDLE_TIMEOUT_SECONDS,
+  loadTranscriptFontSize,
   loadTranslationIdleTimeoutSeconds,
   loadTranslationInputTranscriptionEnabled,
   loadTranslationInputTranscriptionModel,
@@ -91,6 +93,7 @@ export function RealtimeTranslation({
   const [statusText, setStatusText] = useState("Ready · speak in any language");
   const [inputTranscript, setInputTranscript] = useState("");
   const [outputTranscript, setOutputTranscript] = useState("");
+  const [transcriptFontSize, setTranscriptFontSize] = useState(DEFAULT_TRANSCRIPT_FONT_SIZE);
 
   const idleTimeoutSecondsRef = useRef(
     DEFAULT_TRANSLATION_IDLE_TIMEOUT_SECONDS,
@@ -101,6 +104,7 @@ export function RealtimeTranslation({
     loadTranslationIdleTimeoutSeconds().then((seconds) => {
       idleTimeoutSecondsRef.current = seconds;
     });
+    loadTranscriptFontSize().then(setTranscriptFontSize);
   }, []);
 
   const resetIdleTimer = useCallback(() => {
@@ -155,7 +159,10 @@ export function RealtimeTranslation({
       "onTranslationInputTranscript",
       (payload: TranslationTranscriptEventPayload) => {
         log.debug("Translation input delta", {}, { delta: payload.delta });
-        setInputTranscript((prev) => prev + payload.delta);
+        setInputTranscript((prev) => {
+          const sep = prev && !prev.endsWith(" ") && !payload.delta.startsWith(" ") ? " " : "";
+          return prev + sep + payload.delta;
+        });
         resetIdleTimer();
       },
     );
@@ -168,7 +175,10 @@ export function RealtimeTranslation({
       "onTranslationOutputTranscript",
       (payload: TranslationTranscriptEventPayload) => {
         log.debug("Translation output delta", {}, { delta: payload.delta });
-        setOutputTranscript((prev) => prev + payload.delta);
+        setOutputTranscript((prev) => {
+          const sep = prev && !prev.endsWith(" ") && !payload.delta.startsWith(" ") ? " " : "";
+          return prev + sep + payload.delta;
+        });
         resetIdleTimer();
       },
     );
@@ -523,13 +533,13 @@ export function RealtimeTranslation({
             {inputTranscript ? (
               <View style={styles.transcriptBlock}>
                 <Text style={styles.transcriptLabel}>You said</Text>
-                <Text style={styles.transcriptText}>{inputTranscript}</Text>
+                <Text style={[styles.transcriptText, { fontSize: transcriptFontSize, lineHeight: Math.round(transcriptFontSize * 1.47) }]}>{inputTranscript}</Text>
               </View>
             ) : null}
             {outputTranscript ? (
               <View style={styles.transcriptBlock}>
                 <Text style={styles.transcriptLabel}>Translation</Text>
-                <Text style={styles.transcriptText}>{outputTranscript}</Text>
+                <Text style={[styles.transcriptText, { fontSize: transcriptFontSize, lineHeight: Math.round(transcriptFontSize * 1.47) }]}>{outputTranscript}</Text>
               </View>
             ) : null}
           </ScrollView>
