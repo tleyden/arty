@@ -84,6 +84,9 @@ class OpenAIWebRTCBase: NSObject {
     var iceGatheringStartTimestamp: Date?
     var isMonitoringAudioRoute = false
     var hasSentInitialSessionConfig = false
+    // When true, this is a secondary (reverse) session sharing the primary's AVAudioSession.
+    // configureAudioSession and deactivateAudioSession become no-ops.
+    var skipAudioSession = false
     let logger = VmWebrtcLogging.logger
     var apiKey: String?
     let iceGatheringGracePeriod: TimeInterval = 0.5

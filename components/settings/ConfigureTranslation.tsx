@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from "react";
-import { Pressable, StyleSheet, Switch, Text, View } from "react-native";
+import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 
+import { TRANSLATION_OUTPUT_LANGUAGES } from "../../lib/translationLanguages";
 import {
+  DEFAULT_BIDIRECTIONAL_LANGUAGE,
   DEFAULT_TRANSCRIPT_FONT_SIZE,
   DEFAULT_TRANSLATION_IDLE_TIMEOUT_SECONDS,
   DEFAULT_TRANSLATION_INPUT_TRANSCRIPTION_ENABLED,
@@ -9,11 +11,13 @@ import {
   DEFAULT_TRANSLATION_NOISE_REDUCTION,
   TRANSCRIPT_FONT_SIZE_OPTIONS,
   type NoiseReductionType,
+  loadBidirectionalLanguage,
   loadTranscriptFontSize,
   loadTranslationIdleTimeoutSeconds,
   loadTranslationInputTranscriptionEnabled,
   loadTranslationInputTranscriptionModel,
   loadTranslationNoiseReductionType,
+  saveBidirectionalLanguage,
   saveTranscriptFontSize,
   saveTranslationIdleTimeoutSeconds,
   saveTranslationInputTranscriptionEnabled,
@@ -51,12 +55,14 @@ interface ConfigureTranslationProps {
   visible: boolean;
   onClose: () => void;
   onFontSizeChange?: (size: number) => void;
+  onBidirectionalLanguageChange?: (code: string) => void;
 }
 
 export const ConfigureTranslation: React.FC<ConfigureTranslationProps> = ({
   visible,
   onClose,
   onFontSizeChange,
+  onBidirectionalLanguageChange,
 }) => {
   const [idleTimeout, setIdleTimeout] = useState(
     DEFAULT_TRANSLATION_IDLE_TIMEOUT_SECONDS,
@@ -73,6 +79,8 @@ export const ConfigureTranslation: React.FC<ConfigureTranslationProps> = ({
   const [transcriptFontSize, setTranscriptFontSize] = useState(
     DEFAULT_TRANSCRIPT_FONT_SIZE,
   );
+  const [bidirectionalLanguage, setBidirectionalLanguage] = useState(DEFAULT_BIDIRECTIONAL_LANGUAGE);
+  const [biLangModalVisible, setBiLangModalVisible] = useState(false);
 
   useEffect(() => {
     if (!visible) return;
@@ -82,11 +90,13 @@ export const ConfigureTranslation: React.FC<ConfigureTranslationProps> = ({
       loadTranslationInputTranscriptionEnabled(),
       loadTranslationInputTranscriptionModel(),
       loadTranscriptFontSize(),
-    ]).then(([timeout, noise, transcription, , fontSize]) => {
+      loadBidirectionalLanguage(),
+    ]).then(([timeout, noise, transcription, , fontSize, biLang]) => {
       setIdleTimeout(timeout);
       setNoiseReduction(noise);
       setTranscriptionEnabled(transcription);
       setTranscriptFontSize(fontSize);
+      setBidirectionalLanguage(biLang);
     });
   }, [visible]);
 
@@ -113,6 +123,13 @@ export const ConfigureTranslation: React.FC<ConfigureTranslationProps> = ({
     }
   };
 
+  const handleBidirectionalLanguageSelect = (code: string) => {
+    setBidirectionalLanguage(code);
+    void saveBidirectionalLanguage(code);
+    onBidirectionalLanguageChange?.(code);
+    setBiLangModalVisible(false);
+  };
+
   const adjustFontSize = (delta: number) => {
     const idx = TRANSCRIPT_FONT_SIZE_OPTIONS.indexOf(transcriptFontSize);
     const nextIdx = Math.min(
@@ -127,8 +144,56 @@ export const ConfigureTranslation: React.FC<ConfigureTranslationProps> = ({
     }
   };
 
+  const biLang = TRANSLATION_OUTPUT_LANGUAGES.find(
+    (l) => l.code === bidirectionalLanguage,
+  );
+
   return (
     <BottomSheet visible={visible} onClose={onClose} title="Configure Translation">
+      <Modal
+        visible={biLangModalVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setBiLangModalVisible(false)}
+      >
+        <Pressable style={styles.modalBackdrop} onPress={() => setBiLangModalVisible(false)}>
+          <Pressable style={styles.modalSheet} onPress={() => {}}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalTitle}>Bidirectional Language</Text>
+            <ScrollView
+              style={styles.modalScroll}
+              contentContainerStyle={styles.modalScrollContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {TRANSLATION_OUTPUT_LANGUAGES.map((lang) => {
+                const isSelected = bidirectionalLanguage === lang.code;
+                return (
+                  <Pressable
+                    key={lang.code}
+                    onPress={() => handleBidirectionalLanguageSelect(lang.code)}
+                    style={({ pressed }) => [
+                      styles.modalLangRow,
+                      isSelected && styles.modalLangRowSelected,
+                      pressed && styles.modalLangRowPressed,
+                    ]}
+                  >
+                    <Text style={styles.modalLangFlag}>{lang.flag}</Text>
+                    <Text
+                      style={[
+                        styles.modalLangName,
+                        isSelected && styles.modalLangNameSelected,
+                      ]}
+                    >
+                      {lang.name}
+                    </Text>
+                    {isSelected && <Text style={styles.modalCheckmark}>✓</Text>}
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
       <View style={styles.body}>
         <Text style={styles.lead}>
           Configure options for real-time translation sessions.
@@ -231,6 +296,27 @@ export const ConfigureTranslation: React.FC<ConfigureTranslationProps> = ({
             <Text style={styles.modelValue}>{transcriptionModel}</Text>
           </View>
         )}
+
+        {/* Bidirectional Language */}
+        <Text style={styles.sectionLabel}>Bidirectional</Text>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => setBiLangModalVisible(true)}
+          style={({ pressed }) => [
+            styles.optionCard,
+            pressed && styles.optionCardPressed,
+          ]}
+        >
+          <View style={styles.optionCopy}>
+            <Text style={styles.optionTitle}>Translate back to</Text>
+            <Text style={styles.optionSubtitle}>
+              The language you want to hear. Only active if Advanced › Bidirectional is enabled.
+            </Text>
+          </View>
+          <Text style={styles.biLangValue}>
+            {biLang ? `${biLang.flag} ${biLang.name}` : bidirectionalLanguage}
+          </Text>
+        </Pressable>
 
         {/* Transcript Font Size */}
         <View style={styles.optionCard}>
@@ -435,5 +521,85 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "500",
     color: "#1C1C1E",
+  },
+  optionCardPressed: {
+    backgroundColor: "#F2F2F7",
+  },
+  biLangValue: {
+    fontSize: 15,
+    fontWeight: "500",
+    color: "#1C1C1E",
+    flexShrink: 0,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "flex-end",
+  },
+  modalSheet: {
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingTop: 12,
+    paddingBottom: 40,
+    maxHeight: "60%",
+  },
+  modalHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "#C7C7CC",
+    alignSelf: "center",
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 17,
+    fontWeight: "600",
+    color: "#1C1C1E",
+    textAlign: "center",
+    marginBottom: 16,
+    paddingHorizontal: 20,
+  },
+  modalScroll: {
+    paddingHorizontal: 20,
+  },
+  modalScrollContent: {
+    gap: 8,
+    paddingBottom: 8,
+  },
+  modalLangRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: "#E5E5EA",
+    backgroundColor: "#FAFAFA",
+  },
+  modalLangRowSelected: {
+    borderColor: "#4CAF50",
+    backgroundColor: "#E8F5E8",
+  },
+  modalLangRowPressed: {
+    backgroundColor: "#F0F0F5",
+  },
+  modalLangFlag: {
+    fontSize: 24,
+  },
+  modalLangName: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: "500",
+    color: "#1C1C1E",
+  },
+  modalLangNameSelected: {
+    color: "#2E7D32",
+    fontWeight: "600",
+  },
+  modalCheckmark: {
+    fontSize: 16,
+    color: "#4CAF50",
   },
 });

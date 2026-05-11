@@ -17,10 +17,12 @@ export type TranslationConnectionOptions = {
   outputLanguage: string;
   noiseReductionType?: "near_field" | "far_field";
   inputTranscriptionModel?: string;
+  bidirectionalLanguage?: string;
 };
 
 export type TranslationTranscriptEventPayload = {
   delta: string;
+  role?: "primary" | "reverse";
 };
 
 type TranslatorModuleEvents = {
@@ -59,7 +61,12 @@ export const openTranslationConnectionAsync = async (
   log.debug(
     `[${MODULE_NAME}] openTranslationConnectionAsync`,
     {},
-    { outputLanguage: options.outputLanguage, audioOutput: options.audioOutput ?? "handset" },
+    {
+      outputLanguage: options.outputLanguage,
+      audioOutput: options.audioOutput ?? "handset",
+      bidirectionalLanguage: options.bidirectionalLanguage ?? null,
+      noiseReductionType: options.noiseReductionType ?? "disabled",
+    },
   );
   return module.openTranslationConnectionAsync(options);
 };

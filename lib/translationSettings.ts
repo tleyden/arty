@@ -8,13 +8,18 @@ const INPUT_TRANSCRIPTION_MODEL_KEY =
   "@vibemachine/translationInputTranscriptionModel";
 const TRANSCRIPT_FONT_SIZE_KEY = "@vibemachine/translationTranscriptFontSize";
 const OUTPUT_LANGUAGE_KEY = "@vibemachine/translationOutputLanguage";
+const BIDIRECTIONAL_ENABLED_KEY = "@vibemachine/translationBidirectionalEnabled";
+const BIDIRECTIONAL_LANGUAGE_KEY = "@vibemachine/translationBidirectionalLanguage";
+
+export const DEFAULT_BIDIRECTIONAL_ENABLED = false;
+export const DEFAULT_BIDIRECTIONAL_LANGUAGE = "en";
 
 export const DEFAULT_TRANSLATION_IDLE_TIMEOUT_SECONDS = 60;
 export const MIN_TRANSLATION_IDLE_TIMEOUT_SECONDS = 10;
 export const MAX_TRANSLATION_IDLE_TIMEOUT_SECONDS = 300;
 export const DEFAULT_OUTPUT_LANGUAGE = "de";
 export const DEFAULT_TRANSLATION_NOISE_REDUCTION: NoiseReductionType =
-  "disabled";
+  "near_field";
 export const DEFAULT_TRANSLATION_INPUT_TRANSCRIPTION_ENABLED = false;
 export const DEFAULT_TRANSLATION_INPUT_TRANSCRIPTION_MODEL =
   "gpt-realtime-whisper";
@@ -163,6 +168,43 @@ export const loadOutputLanguage = async (): Promise<string> => {
 export const saveOutputLanguage = async (code: string): Promise<void> => {
   try {
     await AsyncStorage.setItem(OUTPUT_LANGUAGE_KEY, code);
+  } catch {
+    // Ignore persistence errors; UI will fall back to default.
+  }
+};
+
+// --- Bidirectional mode ---
+
+export const loadBidirectionalEnabled = async (): Promise<boolean> => {
+  try {
+    const stored = await AsyncStorage.getItem(BIDIRECTIONAL_ENABLED_KEY);
+    if (stored === null) return DEFAULT_BIDIRECTIONAL_ENABLED;
+    return stored === "true";
+  } catch {
+    return DEFAULT_BIDIRECTIONAL_ENABLED;
+  }
+};
+
+export const saveBidirectionalEnabled = async (enabled: boolean): Promise<void> => {
+  try {
+    await AsyncStorage.setItem(BIDIRECTIONAL_ENABLED_KEY, enabled ? "true" : "false");
+  } catch {
+    // Ignore persistence errors; UI will fall back to default.
+  }
+};
+
+export const loadBidirectionalLanguage = async (): Promise<string> => {
+  try {
+    const stored = await AsyncStorage.getItem(BIDIRECTIONAL_LANGUAGE_KEY);
+    return stored ?? DEFAULT_BIDIRECTIONAL_LANGUAGE;
+  } catch {
+    return DEFAULT_BIDIRECTIONAL_LANGUAGE;
+  }
+};
+
+export const saveBidirectionalLanguage = async (code: string): Promise<void> => {
+  try {
+    await AsyncStorage.setItem(BIDIRECTIONAL_LANGUAGE_KEY, code);
   } catch {
     // Ignore persistence errors; UI will fall back to default.
   }

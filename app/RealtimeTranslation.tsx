@@ -14,15 +14,20 @@ import { SessionFooter } from "../components/realtime/SessionFooter";
 import { TranscriptView } from "../components/realtime/TranscriptView";
 import { log } from "../lib/logger";
 import {
+  DEFAULT_BIDIRECTIONAL_ENABLED,
+  DEFAULT_BIDIRECTIONAL_LANGUAGE,
   DEFAULT_OUTPUT_LANGUAGE,
   DEFAULT_TRANSCRIPT_FONT_SIZE,
   DEFAULT_TRANSLATION_IDLE_TIMEOUT_SECONDS,
+  loadBidirectionalEnabled,
+  loadBidirectionalLanguage,
   loadOutputLanguage,
   loadTranscriptFontSize,
   loadTranslationIdleTimeoutSeconds,
   loadTranslationInputTranscriptionEnabled,
   loadTranslationInputTranscriptionModel,
   loadTranslationNoiseReductionType,
+  saveBidirectionalEnabled,
   saveOutputLanguage,
 } from "../lib/translationSettings";
 import type {
@@ -45,6 +50,7 @@ type RealtimeTranslationProps = {
   hasMicPermission: boolean;
   permissionError: string | null;
   transcriptFontSize?: number;
+  bidirectionalLanguage?: string;
 };
 
 export function RealtimeTranslation({
@@ -52,6 +58,7 @@ export function RealtimeTranslation({
   hasMicPermission,
   permissionError,
   transcriptFontSize: transcriptFontSizeProp,
+  bidirectionalLanguage: bidirectionalLanguageProp,
 }: RealtimeTranslationProps) {
   const [outputLanguage, setOutputLanguage] = useState(DEFAULT_OUTPUT_LANGUAGE);
   const [languageModalVisible, setLanguageModalVisible] = useState(false);
@@ -60,6 +67,9 @@ export function RealtimeTranslation({
   const [isStopping, setIsStopping] = useState(false);
   const [audioOutput, setAudioOutput] = useState<AudioOutput>("handset");
   const [isMuted, setIsMuted] = useState(false);
+  const [isBidirectional, setIsBidirectional] = useState(DEFAULT_BIDIRECTIONAL_ENABLED);
+  const [bidirectionalLanguageLocal, setBidirectionalLanguage] = useState(DEFAULT_BIDIRECTIONAL_LANGUAGE);
+  const bidirectionalLanguage = bidirectionalLanguageProp ?? bidirectionalLanguageLocal;
   const [statusText, setStatusText] = useState("Ready · speak in any language");
   const [inputTranscript, setInputTranscript] = useState("");
   const [outputTranscript, setOutputTranscript] = useState("");
@@ -79,6 +89,8 @@ export function RealtimeTranslation({
     });
     loadTranscriptFontSize().then(setTranscriptFontSizeLocal);
     loadOutputLanguage().then(setOutputLanguage);
+    loadBidirectionalEnabled().then(setIsBidirectional);
+    loadBidirectionalLanguage().then(setBidirectionalLanguage);
   }, []);
 
   const resetIdleTimer = useCallback(() => {
@@ -131,7 +143,7 @@ export function RealtimeTranslation({
     const sub = VmWebrtcTranslatorModule.addListener(
       "onTranslationInputTranscript",
       (payload: TranslationTranscriptEventPayload) => {
-        log.debug("🎤 → 📝 Source transcript delta", {}, { delta: payload.delta });
+        log.debug("🎤 → 📝 Source transcript delta", {}, { delta: payload.delta, role: payload.role ?? "primary" });
         setInputTranscript((prev) => {
           const sep =
             prev && !prev.endsWith(" ") && !payload.delta.startsWith(" ")
@@ -150,7 +162,7 @@ export function RealtimeTranslation({
     const sub = VmWebrtcTranslatorModule.addListener(
       "onTranslationOutputTranscript",
       (payload: TranslationTranscriptEventPayload) => {
-        log.debug("🌐 → 📝 Translation transcript delta", {}, { delta: payload.delta });
+        log.debug("🌐 → 📝 Translation transcript delta", {}, { delta: payload.delta, role: payload.role ?? "primary" });
         setOutputTranscript((prev) => {
           const sep =
             prev && !prev.endsWith(" ") && !payload.delta.startsWith(" ")
@@ -235,17 +247,47 @@ export function RealtimeTranslation({
           loadTranslationInputTranscriptionModel(),
         ]);
 
+      // Log the full intended stream topology so RCA is easy in logfire.
+      // In bidirectional mode, two streams are needed:
+      //   stream[0]: user's mic → translated to outputLanguage (for the friend)
+      //   stream[1]: friend's mic → translated to bidirectionalLanguage (for the user)
+      const intendedStreams = isBidirectional
+        ? [
+            { index: 0, role: "primary", outputLanguage },
+            { index: 1, role: "secondary (reverse)", outputLanguage: bidirectionalLanguage },
+          ]
+        : [{ index: 0, role: "primary", outputLanguage }];
+
       log.info(
         "Starting translation session",
         {},
         {
-          outputLanguage,
+          mode: isBidirectional ? "bidirectional" : "unidirectional",
           audioOutput,
           noiseReductionType,
           transcriptionEnabled,
           transcriptionModel,
+          intendedStreams,
         },
       );
+
+      if (isBidirectional) {
+        log.info(
+          "Bidirectional mode: opening two streams",
+          {},
+          {
+            stream0: { role: "primary", outputLanguage },
+            stream1: { role: "reverse", outputLanguage: bidirectionalLanguage },
+          },
+        );
+      }
+
+      log.info(
+        "Opening translation stream[0]",
+        {},
+        { role: "primary", outputLanguage, audioOutput },
+      );
+
       const state: OpenAIConnectionState = await openTranslationConnectionAsync(
         {
           apiKey: baseConnectionOptions.apiKey,
@@ -256,9 +298,10 @@ export function RealtimeTranslation({
           ...(transcriptionEnabled && {
             inputTranscriptionModel: transcriptionModel,
           }),
+          ...(isBidirectional && bidirectionalLanguage && { bidirectionalLanguage }),
         },
       );
-      log.info("Translation session resolved", {}, { state });
+      log.info("Translation stream[0] resolved", {}, { role: "primary", outputLanguage, state });
       const connected = state === "connected" || state === "completed";
       setIsSessionActive(connected);
     } catch (error) {
@@ -280,7 +323,9 @@ export function RealtimeTranslation({
   }, [
     audioOutput,
     baseConnectionOptions,
+    bidirectionalLanguage,
     hasMicPermission,
+    isBidirectional,
     isConnecting,
     isSessionActive,
     outputLanguage,
@@ -325,6 +370,11 @@ export function RealtimeTranslation({
     }
   }, []);
 
+  const handleToggleBidirectional = useCallback((nextValue: boolean) => {
+    setIsBidirectional(nextValue);
+    void saveBidirectionalEnabled(nextValue);
+  }, []);
+
   const handleSelectLanguage = useCallback((code: string) => {
     setOutputLanguage(code);
     saveOutputLanguage(code);
@@ -352,8 +402,12 @@ export function RealtimeTranslation({
         <AdvancedPanel
           isSpeakerphone={isSpeakerphone}
           isMuted={isMuted}
+          isBidirectional={isBidirectional}
+          bidirectionalLanguage={bidirectionalLanguage}
+          isSessionActive={isSessionActive}
           onToggleSpeakerphone={handleToggleSpeakerphone}
           onToggleMute={handleToggleMute}
+          onToggleBidirectional={handleToggleBidirectional}
         />
 
         <TranscriptView
