@@ -10,7 +10,7 @@ import WebRTC
 //   - No turn management, no response.create, no tools, no voice selection
 //   - Session config specifies only output language; input language is auto-detected
 //   - Continuous audio stream in → continuous translated audio stream out
-//   - Transcript deltas emitted as onTranslationInputTranscript / onTranslationOutputTranscript
+//   - Transcript deltas emitted as onTranslationInputTranscript / onTranslationOutputTranscript.
 
 final class OpenAIWebRTCTranslatorClient: OpenAIWebRTCBase {
 
