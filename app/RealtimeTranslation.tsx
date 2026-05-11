@@ -404,6 +404,7 @@ export function RealtimeTranslation({
           isMuted={isMuted}
           isBidirectional={isBidirectional}
           bidirectionalLanguage={bidirectionalLanguage}
+          isSessionActive={isSessionActive}
           onToggleSpeakerphone={handleToggleSpeakerphone}
           onToggleMute={handleToggleMute}
           onToggleBidirectional={handleToggleBidirectional}

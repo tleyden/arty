@@ -9,6 +9,7 @@ type Props = {
   isMuted: boolean;
   isBidirectional: boolean;
   bidirectionalLanguage: string;
+  isSessionActive: boolean;
   onToggleSpeakerphone: (value: boolean) => void;
   onToggleMute: (value: boolean) => void;
   onToggleBidirectional: (value: boolean) => void;
@@ -19,6 +20,7 @@ export function AdvancedPanel({
   isMuted,
   isBidirectional,
   bidirectionalLanguage,
+  isSessionActive,
   onToggleSpeakerphone,
   onToggleMute,
   onToggleBidirectional,
@@ -56,7 +58,9 @@ export function AdvancedPanel({
           <View style={styles.biRow}>
             <View style={styles.biCopy}>
               <Text style={styles.biLabel}>Bidirectional</Text>
-              {isBidirectional && biLang ? (
+              {isSessionActive ? (
+                <Text style={styles.biSub}>Available before session start</Text>
+              ) : isBidirectional && biLang ? (
                 <Text style={styles.biSub}>
                   Translate back to {biLang.flag} {biLang.name}
                 </Text>
@@ -65,6 +69,7 @@ export function AdvancedPanel({
             <Switch
               value={isBidirectional}
               onValueChange={onToggleBidirectional}
+              disabled={isSessionActive}
               trackColor={{ false: "#D1D1D6", true: "#34C759" }}
               thumbColor="#FFFFFF"
               ios_backgroundColor="#D1D1D6"
