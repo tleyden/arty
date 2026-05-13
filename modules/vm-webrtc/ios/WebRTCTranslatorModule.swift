@@ -125,5 +125,11 @@ public class WebRTCTranslatorModule: Module {
                 self.reverseClient.setOutgoingAudioMuted(shouldMute)
             }
         }
+
+        Function("updateOutputLanguage") { (language: String) in
+            Task { @MainActor in
+                self.primaryClient.updateOutputLanguage(language)
+            }
+        }
     }
 }

@@ -132,6 +132,23 @@ final class OpenAIWebRTCTranslatorClient: OpenAIWebRTCBase {
         return result
     }
 
+    // MARK: Language update
+
+    @MainActor
+    func updateOutputLanguage(_ language: String) {
+        let trimmed = language.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        outputLanguage = trimmed
+        logger.log(
+            "[VmWebrtc][Translator] Sending language update",
+            attributes: logAttributes(for: .info, metadata: ["role": role, "language": trimmed])
+        )
+        _ = sendEvent([
+            "type": "session.update",
+            "session": ["audio": ["output": ["language": trimmed]]]
+        ])
+    }
+
     // MARK: Virtual hook overrides
 
     override func dataChannelDidOpen() {

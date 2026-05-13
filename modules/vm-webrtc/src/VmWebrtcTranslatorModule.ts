@@ -39,6 +39,7 @@ declare class VmWebrtcTranslatorModule extends NativeModule<TranslatorModuleEven
   ): Promise<OpenAIConnectionState>;
   closeTranslationConnectionAsync(): Promise<OpenAIConnectionState>;
   muteUnmuteOutgoingAudio(shouldMute: boolean): void;
+  updateOutputLanguage(language: string): void;
 }
 
 const makeUnavailableError = () =>
@@ -82,6 +83,12 @@ export const muteUnmuteOutgoingAudio = (shouldMute: boolean): void => {
   if (!module) throw makeUnavailableError();
   log.debug(`[${MODULE_NAME}] muteUnmuteOutgoingAudio`, {}, { shouldMute });
   module.muteUnmuteOutgoingAudio(shouldMute);
+};
+
+export const updateOutputLanguage = (language: string): void => {
+  if (!module) throw makeUnavailableError();
+  log.debug(`[${MODULE_NAME}] updateOutputLanguage`, {}, { language });
+  module.updateOutputLanguage(language);
 };
 
 export default module ?? ({} as VmWebrtcTranslatorModule);
