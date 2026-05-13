@@ -394,7 +394,6 @@ export function RealtimeTranslation({
     <View style={styles.content}>
       <LanguagePickerRow
         outputLanguage={outputLanguage}
-        isSessionActive={isSessionActive}
         onSelectLanguage={handleSelectLanguage}
         onOpenModal={() => setLanguageModalVisible(true)}
       />

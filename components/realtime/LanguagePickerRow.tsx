@@ -7,14 +7,12 @@ import {
 
 type Props = {
   outputLanguage: string;
-  isSessionActive: boolean;
   onSelectLanguage: (code: string) => void;
   onOpenModal: () => void;
 };
 
 export function LanguagePickerRow({
   outputLanguage,
-  isSessionActive,
   onSelectLanguage,
   onOpenModal,
 }: Props) {
@@ -29,11 +27,10 @@ export function LanguagePickerRow({
           return (
             <Pressable
               key={lang.code}
-              onPress={() => !isSessionActive && onSelectLanguage(lang.code)}
+              onPress={() => onSelectLanguage(lang.code)}
               style={[
                 styles.langChip,
                 isSelected && styles.langChipSelected,
-                isSessionActive && styles.langChipDisabled,
               ]}
             >
               <Text style={styles.langFlag}>{lang.flag}</Text>
@@ -49,11 +46,10 @@ export function LanguagePickerRow({
           );
         })}
         <Pressable
-          onPress={() => !isSessionActive && onOpenModal()}
+          onPress={() => onOpenModal()}
           style={[
             styles.langChip,
             styles.langChipMore,
-            isSessionActive && styles.langChipDisabled,
             !FEATURED_LANGUAGE_CODES.includes(outputLanguage) &&
               styles.langChipSelected,
           ]}
@@ -122,9 +118,6 @@ const styles = StyleSheet.create({
   },
   langChipMore: {
     backgroundColor: "#F2F2F7",
-  },
-  langChipDisabled: {
-    opacity: 0.45,
   },
   langFlag: {
     fontSize: 18,
