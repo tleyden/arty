@@ -40,6 +40,7 @@ import VmWebrtcTranslatorModule, {
   closeTranslationConnectionAsync,
   muteUnmuteOutgoingAudio,
   openTranslationConnectionAsync,
+  updateOutputLanguage,
   type TranslationTranscriptEventPayload,
 } from "../modules/vm-webrtc/src/VmWebrtcTranslatorModule";
 
@@ -378,7 +379,14 @@ export function RealtimeTranslation({
   const handleSelectLanguage = useCallback((code: string) => {
     setOutputLanguage(code);
     saveOutputLanguage(code);
-  }, []);
+    if (isSessionActive) {
+      try {
+        updateOutputLanguage(code);
+      } catch (e) {
+        log.warn("[RealtimeTranslation] updateOutputLanguage unavailable", {}, { error: e });
+      }
+    }
+  }, [isSessionActive]);
 
   const isSpeakerphone = audioOutput === "speakerphone";
 
@@ -386,7 +394,6 @@ export function RealtimeTranslation({
     <View style={styles.content}>
       <LanguagePickerRow
         outputLanguage={outputLanguage}
-        isSessionActive={isSessionActive}
         onSelectLanguage={handleSelectLanguage}
         onOpenModal={() => setLanguageModalVisible(true)}
       />
