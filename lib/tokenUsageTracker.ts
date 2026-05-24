@@ -28,6 +28,8 @@ interface PriceStructure {
   outputAudio: number;
 }
 
+const DEFAULT_PRICED_MODEL: PricedModel = "gpt-realtime-2";
+
 const PRICES: Record<PricedModel, PriceStructure> = {
   "gpt-realtime": {
     inputText: 4.0 / 1_000_000,
@@ -56,13 +58,13 @@ export class TokenUsageTracker {
   private model: string;
   private totals: TokenTotals;
 
-  constructor(model = "gpt-realtime-2") {
+  constructor(model = DEFAULT_PRICED_MODEL) {
     this.model = model;
     this.totals = this.createEmptyTotals();
   }
 
-  static hasPricingForModel(model: string): boolean {
-    return Object.prototype.hasOwnProperty.call(PRICES, model);
+  static hasPricingForModel(_model: string): boolean {
+    return true;
   }
 
   hasPricing(): boolean {
@@ -81,22 +83,17 @@ export class TokenUsageTracker {
     this.totals.outputAudio += usage.outputAudio;
     this.totals.cachedInput += usage.cachedInput ?? 0;
 
-    // Recalculate cost
     const p = this.getPriceStructure();
-    this.totals.hasPricing = p !== null;
+    this.totals.hasPricing = true;
 
-    if (p) {
-      const cost =
-        this.totals.inputText * p.inputText +
-        this.totals.cachedInput * p.cachedInput +
-        this.totals.outputText * p.outputText +
-        this.totals.inputAudio * p.inputAudio +
-        this.totals.outputAudio * p.outputAudio;
+    const cost =
+      this.totals.inputText * p.inputText +
+      this.totals.cachedInput * p.cachedInput +
+      this.totals.outputText * p.outputText +
+      this.totals.inputAudio * p.inputAudio +
+      this.totals.outputAudio * p.outputAudio;
 
-      this.totals.totalUSD = parseFloat(cost.toFixed(6));
-    } else {
-      this.totals.totalUSD = 0;
-    }
+    this.totals.totalUSD = parseFloat(cost.toFixed(6));
 
     return { ...this.totals };
   }
@@ -118,10 +115,10 @@ export class TokenUsageTracker {
     };
   }
 
-  private getPriceStructure(): PriceStructure | null {
-    if (!TokenUsageTracker.hasPricingForModel(this.model)) {
-      return null;
+  private getPriceStructure(): PriceStructure {
+    if (Object.prototype.hasOwnProperty.call(PRICES, this.model)) {
+      return PRICES[this.model as PricedModel];
     }
-    return PRICES[this.model as keyof typeof PRICES];
+    return PRICES[DEFAULT_PRICED_MODEL];
   }
 }
