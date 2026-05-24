@@ -185,9 +185,12 @@ public class VmWebrtcModule: Module {
                 "openOpenAIConnectionAsync called",
                 attributes: [
                     "model": options.model ?? "nil",
+                    "baseUrl": options.baseUrl ?? "nil",
                     "audioOutput": options.audioOutput ?? "nil",
                     "voice": options.voice ?? "nil",
                     "vadMode": options.vadMode ?? "nil",
+                    "toolDefinitionCount": options.toolDefinitions?.count ?? 0,
+                    "transcriptionEnabled": options.transcriptionEnabled ?? false,
                 ])
             let outputPreference =
                 AudioOutputPreference(rawValue: options.audioOutput ?? "handset") ?? .handset

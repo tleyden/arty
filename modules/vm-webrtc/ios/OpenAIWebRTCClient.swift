@@ -282,6 +282,16 @@ final class OpenAIWebRTCClient: OpenAIWebRTCBase {
                 attributes: logAttributes(for: .error))
             throw OpenAIWebRTCError.missingLocalDescription
         }
+        self.logger.log(
+            "[VmWebrtc] Final local SDP ready for OpenAI exchange",
+            attributes: logAttributes(
+                for: .debug,
+                metadata: [
+                    "endpoint": endpointURL.absoluteString,
+                    "sdpLength": localSDP.count,
+                    "sdpSummary": analyzeSDP(localSDP),
+                    "sdp": localSDP,
+                ]))
 
         emitModuleEvent(
             "onVoiceSessionStatus", payload: ["status_update": "Connecting to OpenAI endpoint..."])

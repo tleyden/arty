@@ -396,8 +396,8 @@ export function VoiceChat({
         "Starting OpenAI voice session",
         {},
         {
-          hasBaseUrl: Boolean(baseConnectionOptions.baseUrl),
-          hasModel: Boolean(baseConnectionOptions.model),
+          baseUrl: baseConnectionOptions.baseUrl ?? "default",
+          model: baseConnectionOptions.model ?? "default",
           audioOutput,
           voice: selectedVoice,
           hasInstructions: finalPrompt.trim().length > 0,
@@ -405,6 +405,7 @@ export function VoiceChat({
           toolNames: voiceToolNames,
           transcriptionEnabled,
           selectedLanguage,
+          hasMicPermission,
         },
       );
       const customConnectionOptions: OpenAIConnectionOptions = {

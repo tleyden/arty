@@ -7,9 +7,16 @@ extension OpenAIWebRTCBase {
 
     func buildEndpointURL(baseURL: String?, model: String?) throws -> URL {
         let endpoint = (baseURL?.isEmpty == false ? baseURL! : defaultEndpoint)
+        let resolvedModel = (model?.isEmpty == false ? model! : defaultModel)
         self.logger.log(
             "[VmWebrtc] " + "Building OpenAI endpoint URL",
-            attributes: logAttributes(for: .debug, metadata: ["base": endpoint]))
+            attributes: logAttributes(
+                for: .debug,
+                metadata: [
+                    "base": endpoint,
+                    "providedBaseURL": baseURL ?? "",
+                    "resolvedModel": resolvedModel,
+                ]))
         guard var components = URLComponents(string: endpoint) else {
             self.logger.log(
                 "[VmWebrtc] " + "Failed to parse OpenAI endpoint",
@@ -18,10 +25,9 @@ extension OpenAIWebRTCBase {
         }
 
         var items = components.queryItems ?? []
+        let hadModelQueryItem = items.contains(where: { $0.name == "model" })
         if items.contains(where: { $0.name == "model" }) == false {
-            items.append(
-                URLQueryItem(
-                    name: "model", value: (model?.isEmpty == false ? model! : defaultModel)))
+            items.append(URLQueryItem(name: "model", value: resolvedModel))
         }
         components.queryItems = items
 
@@ -31,10 +37,98 @@ extension OpenAIWebRTCBase {
                 attributes: logAttributes(for: .error, metadata: ["endpoint": endpoint]))
             throw OpenAIWebRTCError.invalidEndpoint
         }
+        let endpointSummary = describeEndpoint(url)
         self.logger.log(
             "[VmWebrtc] " + "OpenAI endpoint URL ready",
-            attributes: logAttributes(for: .debug, metadata: ["url": url.absoluteString]))
+            attributes: logAttributes(
+                for: .debug,
+                metadata: [
+                    "url": url.absoluteString,
+                    "queryItems": summarizeQueryItems(items),
+                    "appendedModelQuery": hadModelQueryItem == false,
+                    "endpointSummary": endpointSummary,
+                ]))
+        if (endpointSummary["mode"] as? String) == "legacy_realtime_query_sdp" {
+            self.logger.log(
+                "[VmWebrtc] OpenAI endpoint is using the legacy realtime query-parameter SDP exchange",
+                attributes: logAttributes(for: .warn, metadata: endpointSummary))
+        }
         return url
+    }
+
+    func summarizeQueryItems(_ items: [URLQueryItem]) -> [String: String] {
+        var result: [String: String] = [:]
+        for item in items {
+            result[item.name] = item.value ?? ""
+        }
+        return result
+    }
+
+    func describeEndpoint(_ url: URL) -> [String: Any] {
+        let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        let queryItems = components?.queryItems ?? []
+        let path = url.path
+        let hasModelQuery = queryItems.contains(where: { $0.name == "model" })
+        let mode: String
+
+        switch path {
+        case "/v1/realtime":
+            mode = hasModelQuery ? "legacy_realtime_query_sdp" : "legacy_realtime"
+        case "/v1/realtime/calls":
+            mode = "realtime_calls"
+        case "/v1/realtime/translations/calls":
+            mode = "translation_calls"
+        default:
+            mode = "custom"
+        }
+
+        return [
+            "scheme": url.scheme ?? "",
+            "host": url.host ?? "",
+            "path": path,
+            "mode": mode,
+            "hasModelQuery": hasModelQuery,
+            "queryItems": summarizeQueryItems(queryItems),
+        ]
+    }
+
+    func analyzeSDP(_ sdp: String) -> [String: Any] {
+        let lines = sdp
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        let mediaSections = lines.filter { $0.hasPrefix("m=") }
+        let rtpmapLines = lines.filter { $0.hasPrefix("a=rtpmap:") }
+        let directionLines = lines.filter {
+            $0 == "a=sendrecv" || $0 == "a=sendonly" || $0 == "a=recvonly" || $0 == "a=inactive"
+        }
+        let candidateLines = lines.filter { $0.hasPrefix("a=candidate:") }
+
+        return [
+            "lineCount": lines.count,
+            "mediaSections": mediaSections,
+            "hasAudioMedia": mediaSections.contains(where: { $0.hasPrefix("m=audio") }),
+            "hasVideoMedia": mediaSections.contains(where: { $0.hasPrefix("m=video") }),
+            "hasApplicationMedia": mediaSections.contains(where: { $0.hasPrefix("m=application") }),
+            "hasOpus48000Stereo": lines.contains(where: { $0.contains("opus/48000/2") }),
+            "hasOpus48000Mono": lines.contains(where: { $0.contains("opus/48000/1") }),
+            "directionAttributes": directionLines,
+            "candidateCount": candidateLines.count,
+            "iceUfragPresent": lines.contains(where: { $0.hasPrefix("a=ice-ufrag:") }),
+            "icePwdPresent": lines.contains(where: { $0.hasPrefix("a=ice-pwd:") }),
+            "fingerprintPresent": lines.contains(where: { $0.hasPrefix("a=fingerprint:") }),
+            "setupAttributes": lines.filter { $0.hasPrefix("a=setup:") },
+            "midAttributes": lines.filter { $0.hasPrefix("a=mid:") },
+            "rtpmapLines": rtpmapLines,
+        ]
+    }
+
+    func summarizeHTTPHeaders(_ headers: [AnyHashable: Any]) -> [String: String] {
+        var result: [String: String] = [:]
+        for (key, value) in headers {
+            result[String(describing: key)] = String(describing: value)
+        }
+        return result
     }
 
     func configureAudioSession(for output: AudioOutputPreference) throws {
@@ -337,7 +431,12 @@ extension OpenAIWebRTCBase {
         audioTrack.isEnabled = !isOutgoingAudioMuted
         self.logger.log(
             "[VmWebrtc] " + "Attached audio track to peer connection",
-            attributes: logAttributes(for: .debug))
+            attributes: logAttributes(
+                for: .debug,
+                metadata: [
+                    "trackId": audioTrack.trackId,
+                    "isEnabled": audioTrack.isEnabled,
+                ]))
 
         let dataChannelConfig = RTCDataChannelConfiguration()
         dataChannelConfig.channelId = 0
@@ -394,7 +493,13 @@ extension OpenAIWebRTCBase {
 
                 self.logger.log(
                     "[VmWebrtc] " + "Local SDP offer ready",
-                    attributes: logAttributes(for: .debug, metadata: ["sdpLength": sdp.sdp.count]))
+                    attributes: logAttributes(
+                        for: .debug,
+                        metadata: [
+                            "sdpLength": sdp.sdp.count,
+                            "sdpSummary": self.analyzeSDP(sdp.sdp),
+                            "sdp": sdp.sdp,
+                        ]))
                 continuation.resume(returning: sdp)
             }
         }
@@ -516,13 +621,21 @@ extension OpenAIWebRTCBase {
     func exchangeSDPWithOpenAI(apiKey: String, endpointURL: URL, offerSDP: String) async throws
         -> String
     {
+        let endpointSummary = describeEndpoint(endpointURL)
+        let sdpSummary = analyzeSDP(offerSDP)
         self.logger.log(
             "[VmWebrtc] " + "Sending SDP offer to OpenAI",
             attributes: logAttributes(
                 for: .debug,
                 metadata: [
                     "endpoint": endpointURL.absoluteString,
+                    "endpointSummary": endpointSummary,
+                    "requestMethod": "POST",
+                    "requestContentType": "application/sdp",
+                    "apiKeyLength": apiKey.count,
                     "sdpLength": offerSDP.count,
+                    "sdpSummary": sdpSummary,
+                    "sdp": offerSDP,
                 ]))
 
         var request = URLRequest(url: endpointURL)
@@ -541,11 +654,23 @@ extension OpenAIWebRTCBase {
         }
 
         guard (200..<300).contains(httpResponse.statusCode) else {
+            let responseBody = String(data: data, encoding: .utf8) ?? "<non_utf8_response_body>"
             self.logger.log(
                 "[VmWebrtc] " + "OpenAI rejected SDP offer",
                 attributes: logAttributes(
-                    for: .error, metadata: ["status": httpResponse.statusCode]))
-            throw OpenAIWebRTCError.openAIRejected(httpResponse.statusCode)
+                    for: .error,
+                    metadata: [
+                        "status": httpResponse.statusCode,
+                        "endpoint": endpointURL.absoluteString,
+                        "endpointSummary": endpointSummary,
+                        "responseHeaders": summarizeHTTPHeaders(httpResponse.allHeaderFields),
+                        "responseBody": responseBody,
+                        "sdpSummary": sdpSummary,
+                    ]))
+            throw OpenAIWebRTCError.openAIRejected(
+                status: httpResponse.statusCode,
+                details: responseBody
+            )
         }
 
         guard let answer = String(data: data, encoding: .utf8), !answer.isEmpty else {
@@ -557,7 +682,13 @@ extension OpenAIWebRTCBase {
 
         self.logger.log(
             "[VmWebrtc] " + "Received SDP answer from OpenAI",
-            attributes: logAttributes(for: .debug, metadata: ["sdpLength": answer.count]))
+            attributes: logAttributes(
+                for: .debug,
+                metadata: [
+                    "sdpLength": answer.count,
+                    "responseHeaders": summarizeHTTPHeaders(httpResponse.allHeaderFields),
+                    "sdpSummary": analyzeSDP(answer),
+                ]))
         return answer
     }
 

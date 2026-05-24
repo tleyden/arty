@@ -8,7 +8,7 @@ enum OpenAIWebRTCError: LocalizedError {
     case invalidEndpoint
     case missingLocalDescription
     case missingAPIKey
-    case openAIRejected(Int)
+    case openAIRejected(status: Int, details: String?)
     case openAIResponseDecoding
     case connectionTimeout
     case connectionFailed(String)
@@ -23,8 +23,13 @@ enum OpenAIWebRTCError: LocalizedError {
             return "The local WebRTC session description is missing after ICE gathering."
         case .missingAPIKey:
             return "An OpenAI API key must be set before starting a session."
-        case .openAIRejected(let status):
-            return "OpenAI Realtime endpoint rejected the SDP offer with status code \(status)."
+        case .openAIRejected(let status, let details):
+            let trimmedDetails = details?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if trimmedDetails.isEmpty {
+                return "OpenAI Realtime endpoint rejected the SDP offer with status code \(status)."
+            }
+            return
+                "OpenAI Realtime endpoint rejected the SDP offer with status code \(status). Response body: \(trimmedDetails)"
         case .openAIResponseDecoding:
             return "Could not decode the SDP answer returned by OpenAI."
         case .connectionTimeout:

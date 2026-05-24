@@ -168,8 +168,8 @@ export const openOpenAIConnectionAsync = async (
     `[${MODULE_NAME}] openOpenAIConnectionAsync invoked`,
     {},
     {
-      hasBaseUrl: Boolean(options.baseUrl),
-      hasModel: Boolean(options.model),
+      baseUrl: options.baseUrl ?? "default",
+      model: options.model ?? "default",
       audioOutput: options.audioOutput ?? "handset",
       audioSpeed: resolvedAudioSpeed ?? "default",
       hasInstructions: trimmedInstructions.length > 0,
