@@ -1,6 +1,13 @@
 import { Camera } from "expo-camera";
 import { useCallback, useEffect, useState } from "react";
-import { Alert, AppState, Platform, StyleSheet, Text, View } from "react-native";
+import {
+  Alert,
+  AppState,
+  Platform,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AdvancedConfigurationSheet } from "../components/settings/AdvancedConfigurationSheet";
@@ -11,6 +18,7 @@ import {
 import { ConfigureContextWindow } from "../components/settings/ConfigureContextWindow";
 import { ConfigureLanguage } from "../components/settings/ConfigureLanguage";
 import { ConfigureMainPromptModal } from "../components/settings/ConfigureMainPromptModal";
+import { ConfigureRealtimeModel } from "../components/settings/ConfigureRealtimeModel";
 import { ConfigureToolsSheet } from "../components/settings/ConfigureToolsSheet";
 import { ConfigureTranscription } from "../components/settings/ConfigureTranscription";
 import { ConfigureTranslation } from "../components/settings/ConfigureTranslation";
@@ -47,6 +55,12 @@ import {
 } from "../lib/chatModePreference";
 import { log } from "../lib/logger";
 import { loadMainPromptAddition } from "../lib/mainPrompt";
+import {
+  DEFAULT_REALTIME_MODEL,
+  loadRealtimeModelPreference,
+  saveRealtimeModelPreference,
+  type RealtimeModel,
+} from "../lib/realtimeModelPreference";
 import { getApiKey } from "../lib/secure-storage";
 import {
   DEFAULT_TRANSCRIPTION_ENABLED,
@@ -102,7 +116,6 @@ const buildConnectionOptions =
 
     return {
       apiKey,
-      model: process.env.EXPO_PUBLIC_OPENAI_REALTIME_MODEL,
       baseUrl: process.env.EXPO_PUBLIC_OPENAI_REALTIME_BASE_URL,
       voice: envVoice && envVoice.length > 0 ? envVoice : "cedar",
     };
@@ -120,12 +133,15 @@ export default function Index() {
   const [configureToolsVisible, setConfigureToolsVisible] = useState(false);
   const [baseConnectionOptions, setBaseConnectionOptions] =
     useState<BaseOpenAIConnectionOptions | null>(null);
+  const [selectedRealtimeModel, setSelectedRealtimeModel] =
+    useState<RealtimeModel>(DEFAULT_REALTIME_MODEL);
   const [selectedVoice, setSelectedVoice] = useState(DEFAULT_VOICE);
   const [voiceSheetVisible, setVoiceSheetVisible] = useState(false);
   const [selectedVadMode, setSelectedVadMode] =
     useState<VadMode>(DEFAULT_VAD_MODE);
   const [vadSheetVisible, setVadSheetVisible] = useState(false);
-  const [selectedChatMode, setSelectedChatMode] = useState<ChatMode>(DEFAULT_CHAT_MODE);
+  const [selectedChatMode, setSelectedChatMode] =
+    useState<ChatMode>(DEFAULT_CHAT_MODE);
   const [chatModeSheetVisible, setChatModeSheetVisible] = useState(false);
   const [selectedLanguage, setSelectedLanguage] = useState(DEFAULT_LANGUAGE);
   const [languageSheetVisible, setLanguageSheetVisible] = useState(false);
@@ -143,10 +159,16 @@ export default function Index() {
   );
   const [transcriptionSheetVisible, setTranscriptionSheetVisible] =
     useState(false);
+  const [realtimeModelSheetVisible, setRealtimeModelSheetVisible] =
+    useState(false);
   const [translationConfigVisible, setTranslationConfigVisible] =
     useState(false);
-  const [transcriptFontSize, setTranscriptFontSize] = useState(DEFAULT_TRANSCRIPT_FONT_SIZE);
-  const [bidirectionalLanguage, setBidirectionalLanguage] = useState(DEFAULT_BIDIRECTIONAL_LANGUAGE);
+  const [transcriptFontSize, setTranscriptFontSize] = useState(
+    DEFAULT_TRANSCRIPT_FONT_SIZE,
+  );
+  const [bidirectionalLanguage, setBidirectionalLanguage] = useState(
+    DEFAULT_BIDIRECTIONAL_LANGUAGE,
+  );
   const [onboardingVisible, setOnboardingVisible] = useState(false);
   const [onboardingCheckToken, setOnboardingCheckToken] = useState(0);
   const [onboardingCompletionToken, setOnboardingCompletionToken] = useState(0);
@@ -159,7 +181,11 @@ export default function Index() {
   }, []);
 
   useEffect(() => {
-    log.info("[app] mcpExtensionsVisible changed", {}, { mcpExtensionsVisible });
+    log.info(
+      "[app] mcpExtensionsVisible changed",
+      {},
+      { mcpExtensionsVisible },
+    );
   }, [mcpExtensionsVisible]);
 
   // Load connection options on mount and when API key config screen closes
@@ -212,6 +238,31 @@ export default function Index() {
   useEffect(() => {
     let isMounted = true;
 
+    const hydrateRealtimeModelPreference = async () => {
+      const stored = await loadRealtimeModelPreference();
+      if (!isMounted) {
+        return;
+      }
+      setSelectedRealtimeModel(stored);
+      log.info(
+        "Realtime model preference loaded from storage",
+        {},
+        {
+          model: stored,
+        },
+      );
+    };
+
+    hydrateRealtimeModelPreference();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
     const hydrateVoicePreference = async () => {
       const stored = await loadVoicePreference();
       if (!isMounted) {
@@ -235,7 +286,11 @@ export default function Index() {
       const stored = await loadChatModePreference();
       if (!isMounted) return;
       setSelectedChatMode(stored);
-      log.info("Chat mode preference loaded from storage", {}, { mode: stored });
+      log.info(
+        "Chat mode preference loaded from storage",
+        {},
+        { mode: stored },
+      );
     };
 
     hydrateChatModePreference();
@@ -382,6 +437,13 @@ export default function Index() {
     void saveVoicePreference(voice);
     log.info("Voice preference updated and saved", {}, { voice });
     setVoiceSheetVisible(false);
+  }, []);
+
+  const handleSelectRealtimeModel = useCallback((model: RealtimeModel) => {
+    setSelectedRealtimeModel(model);
+    void saveRealtimeModelPreference(model);
+    log.info("Realtime model preference updated and saved", {}, { model });
+    setRealtimeModelSheetVisible(false);
   }, []);
 
   const handleSelectVadMode = useCallback((mode: VadMode) => {
@@ -600,6 +662,7 @@ export default function Index() {
         baseConnectionOptions={baseConnectionOptions}
         hasMicPermission={hasMicPermission}
         permissionError={permissionError}
+        selectedRealtimeModel={selectedRealtimeModel}
         selectedVoice={selectedVoice}
         selectedVadMode={selectedVadMode}
         mainPromptAddition={mainPromptAddition}
@@ -656,6 +719,7 @@ export default function Index() {
           setMainPromptDraft(mainPromptAddition);
           setMainPromptModalVisible(true);
         }}
+        onConfigureModel={() => setRealtimeModelSheetVisible(true)}
         onConfigureVad={() => setVadSheetVisible(true)}
         onConfigureContextWindow={() => setContextWindowVisible(true)}
         onConfigureTranscription={() => setTranscriptionSheetVisible(true)}
@@ -676,6 +740,12 @@ export default function Index() {
         transcriptionEnabled={transcriptionEnabled}
         onToggleTranscription={handleToggleTranscription}
         onClose={() => setTranscriptionSheetVisible(false)}
+      />
+      <ConfigureRealtimeModel
+        visible={realtimeModelSheetVisible}
+        selectedModel={selectedRealtimeModel}
+        onSelectModel={handleSelectRealtimeModel}
+        onClose={() => setRealtimeModelSheetVisible(false)}
       />
       <ConfigureTranslation
         visible={translationConfigVisible}

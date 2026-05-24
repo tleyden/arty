@@ -9,6 +9,7 @@ interface AdvancedConfigurationSheetProps {
   visible: boolean;
   onClose: () => void;
   onConfigureMainPrompt: () => void;
+  onConfigureModel: () => void;
   onConfigureTools: () => void;
   onConfigureVad: () => void;
   onConfigureContextWindow: () => void;
@@ -18,6 +19,7 @@ interface AdvancedConfigurationSheetProps {
 type AdvancedAction = {
   id:
     | "mainPrompt"
+    | "model"
     | "tools"
     | "vad"
     | "contextWindow"
@@ -36,6 +38,7 @@ export const AdvancedConfigurationSheet: React.FC<
   visible,
   onClose,
   onConfigureMainPrompt,
+  onConfigureModel,
   onConfigureTools,
   onConfigureVad,
   onConfigureContextWindow,
@@ -89,6 +92,15 @@ export const AdvancedConfigurationSheet: React.FC<
         onConfigureMainPrompt();
       },
       isPrimary: true,
+    },
+    {
+      id: "model",
+      title: "Choose Model",
+      subtitle: "Select which realtime voice model new sessions use.",
+      onPress: () => {
+        onClose();
+        onConfigureModel();
+      },
     },
     {
       id: "vad",

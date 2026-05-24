@@ -17,6 +17,7 @@ import { VoiceSpeedCustomization } from "../components/VoiceSpeedCustomization";
 import { loadShowRealtimeErrorAlerts } from "../lib/developerSettings";
 import { log } from "../lib/logger";
 import { composeMainPrompt } from "../lib/mainPrompt";
+import { type RealtimeModel } from "../lib/realtimeModelPreference";
 import { getUserFacingRealtimeErrorMessage } from "../lib/realtimeUserError";
 import { TokenUsageTracker } from "../lib/tokenUsageTracker";
 import { loadTranscriptionPreference } from "../lib/transcriptionPreference";
@@ -47,6 +48,7 @@ type VoiceChatProps = {
   baseConnectionOptions: BaseOpenAIConnectionOptions | null;
   hasMicPermission: boolean;
   permissionError: string | null;
+  selectedRealtimeModel: RealtimeModel;
   selectedVoice: string;
   selectedVadMode: VadMode;
   mainPromptAddition: string;
@@ -60,6 +62,7 @@ export function VoiceChat({
   baseConnectionOptions,
   hasMicPermission,
   permissionError,
+  selectedRealtimeModel,
   selectedVoice,
   selectedVadMode,
   mainPromptAddition,
@@ -75,8 +78,11 @@ export function VoiceChat({
   const [isAdvancedExpanded, setIsAdvancedExpanded] = useState(false);
   const [voiceSpeed, setVoiceSpeed] = useState(DEFAULT_VOICE_SPEED);
   const [isMuted, setIsMuted] = useState(false);
-  const tokenUsageTracker = useRef(new TokenUsageTracker("gpt-realtime"));
+  const tokenUsageTracker = useRef(new TokenUsageTracker());
   const [sessionCostUsd, setSessionCostUsd] = useState(0);
+  const [isSessionCostAvailable, setIsSessionCostAvailable] = useState(
+    TokenUsageTracker.hasPricingForModel(selectedRealtimeModel),
+  );
   const [frequencyBins, setFrequencyBins] = useState<number[]>([]);
 
   useEffect(() => {
@@ -125,6 +131,7 @@ export function VoiceChat({
             totals,
           },
         );
+        setIsSessionCostAvailable(totals.hasPricing);
         setSessionCostUsd(totals.totalUSD);
       },
     );
@@ -174,10 +181,8 @@ export function VoiceChat({
           },
         );
         const message =
-          getUserFacingRealtimeErrorMessage(
-            payload?.error?.message,
-            "voice",
-          ) || "The voice session encountered an unexpected error.";
+          getUserFacingRealtimeErrorMessage(payload?.error?.message, "voice") ||
+          "The voice session encountered an unexpected error.";
 
         // Only show alert if developer setting is enabled
         const shouldShowAlert = await loadShowRealtimeErrorAlerts();
@@ -371,14 +376,15 @@ export function VoiceChat({
     }
 
     // Set connecting state immediately so button updates right away
+    const sessionModel = selectedRealtimeModel;
+    tokenUsageTracker.current.setModel(sessionModel);
+    tokenUsageTracker.current.reset();
+    setIsSessionCostAvailable(tokenUsageTracker.current.hasPricing());
     setIsConnecting(true);
     setIsSessionActive(false);
     setSessionCostUsd(0);
 
     try {
-      // Reset token usage tracker for new session
-      tokenUsageTracker.current.reset();
-
       // Get Gen2 toolkit definitions (same source as TextChat for consistency)
       // This includes dynamic MCP tools fetched from remote servers
       const toolDefinitions = await getToolkitDefinitions();
@@ -398,7 +404,7 @@ export function VoiceChat({
         {},
         {
           baseUrl: baseConnectionOptions.baseUrl ?? "default",
-          model: baseConnectionOptions.model ?? "default",
+          model: sessionModel,
           audioOutput,
           voice: selectedVoice,
           hasInstructions: finalPrompt.trim().length > 0,
@@ -411,6 +417,7 @@ export function VoiceChat({
       );
       const customConnectionOptions: OpenAIConnectionOptions = {
         ...baseConnectionOptions,
+        model: sessionModel,
         voice: selectedVoice,
         audioOutput,
         instructions: finalPrompt,
@@ -550,6 +557,7 @@ export function VoiceChat({
     retentionRatio,
     disableCompaction,
     selectedLanguage,
+    selectedRealtimeModel,
   ]);
 
   const handleStopVoiceSession = useCallback(async () => {
@@ -685,8 +693,11 @@ export function VoiceChat({
   }, [sessionCostUsd]);
 
   const shouldShowSessionCost = useMemo(() => {
+    if (!isSessionCostAvailable) {
+      return false;
+    }
     return isSessionActive || sessionCostUsd > 0;
-  }, [isSessionActive, sessionCostUsd]);
+  }, [isSessionActive, isSessionCostAvailable, sessionCostUsd]);
 
   return (
     <View style={styles.content}>
