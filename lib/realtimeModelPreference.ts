@@ -10,18 +10,18 @@ export type RealtimeModelOption = {
   description: string;
 };
 
-export const DEFAULT_REALTIME_MODEL: RealtimeModel = "gpt-realtime";
+export const DEFAULT_REALTIME_MODEL: RealtimeModel = "gpt-realtime-2";
 
 export const REALTIME_MODEL_OPTIONS: RealtimeModelOption[] = [
   {
     value: "gpt-realtime",
     title: "GPT Realtime",
-    description: "Model ID: gpt-realtime. Current default for voice sessions.",
+    description: "Model ID: gpt-realtime. Original voice model option.",
   },
   {
     value: "gpt-realtime-2",
     title: "GPT Realtime 2",
-    description: "Model ID: gpt-realtime-2. Newer voice model option.",
+    description: "Model ID: gpt-realtime-2. Default voice model option.",
   },
 ];
 

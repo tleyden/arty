@@ -11,7 +11,7 @@ final class OpenAIWebRTCClient: OpenAIWebRTCBase {
     // MARK: Subclass-provided endpoint constants
 
     override var defaultEndpoint: String { "https://api.openai.com/v1/realtime/calls" }
-    override var defaultModel: String { "gpt-realtime" }
+    override var defaultModel: String { "gpt-realtime-2" }
 
     // MARK: Chat-specific stored properties
 
