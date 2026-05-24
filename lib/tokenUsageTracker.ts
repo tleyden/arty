@@ -15,7 +15,10 @@ export interface TokenTotals extends TokenUsage {
   hasPricing: boolean;
 }
 
-type PricedModel = "gpt-realtime" | "gpt-realtime-mini";
+type PricedModel =
+  | "gpt-realtime"
+  | "gpt-realtime-2"
+  | "gpt-realtime-mini";
 
 interface PriceStructure {
   inputText: number;
@@ -33,6 +36,13 @@ const PRICES: Record<PricedModel, PriceStructure> = {
     inputAudio: 32.0 / 1_000_000,
     outputAudio: 64.0 / 1_000_000,
   },
+  "gpt-realtime-2": {
+    inputText: 4.0 / 1_000_000,
+    cachedInput: 0.4 / 1_000_000,
+    outputText: 24.0 / 1_000_000,
+    inputAudio: 32.0 / 1_000_000,
+    outputAudio: 64.0 / 1_000_000,
+  },
   "gpt-realtime-mini": {
     inputText: 0.6 / 1_000_000,
     cachedInput: 0.06 / 1_000_000,
@@ -46,7 +56,7 @@ export class TokenUsageTracker {
   private model: string;
   private totals: TokenTotals;
 
-  constructor(model = "gpt-realtime") {
+  constructor(model = "gpt-realtime-2") {
     this.model = model;
     this.totals = this.createEmptyTotals();
   }
