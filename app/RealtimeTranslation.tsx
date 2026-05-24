@@ -13,6 +13,7 @@ import { LanguagePickerRow } from "../components/realtime/LanguagePickerRow";
 import { SessionFooter } from "../components/realtime/SessionFooter";
 import { TranscriptView } from "../components/realtime/TranscriptView";
 import { log } from "../lib/logger";
+import { getUserFacingRealtimeErrorMessage } from "../lib/realtimeUserError";
 import {
   DEFAULT_BIDIRECTIONAL_ENABLED,
   DEFAULT_BIDIRECTIONAL_LANGUAGE,
@@ -314,8 +315,7 @@ export function RealtimeTranslation({
         },
         error,
       );
-      const message =
-        error instanceof Error ? error.message : "Unexpected error";
+      const message = getUserFacingRealtimeErrorMessage(error, "translation");
       Alert.alert("Translation", message);
       setIsSessionActive(false);
     } finally {
@@ -348,8 +348,7 @@ export function RealtimeTranslation({
         },
         error,
       );
-      const message =
-        error instanceof Error ? error.message : "Unexpected error";
+      const message = getUserFacingRealtimeErrorMessage(error, "translation");
       Alert.alert("Translation", message);
     } finally {
       setIsStopping(false);

@@ -5,7 +5,9 @@ import WebRTC
 extension OpenAIWebRTCBase {
     // MARK: - Helper Methods
 
-    func buildEndpointURL(baseURL: String?, model: String?) throws -> URL {
+    func buildEndpointURL(baseURL: String?, model: String?, appendModelQuery: Bool = true) throws
+        -> URL
+    {
         let endpoint = (baseURL?.isEmpty == false ? baseURL! : defaultEndpoint)
         let resolvedModel = (model?.isEmpty == false ? model! : defaultModel)
         self.logger.log(
@@ -16,6 +18,7 @@ extension OpenAIWebRTCBase {
                     "base": endpoint,
                     "providedBaseURL": baseURL ?? "",
                     "resolvedModel": resolvedModel,
+                    "appendModelQuery": appendModelQuery,
                 ]))
         guard var components = URLComponents(string: endpoint) else {
             self.logger.log(
@@ -26,7 +29,7 @@ extension OpenAIWebRTCBase {
 
         var items = components.queryItems ?? []
         let hadModelQueryItem = items.contains(where: { $0.name == "model" })
-        if items.contains(where: { $0.name == "model" }) == false {
+        if appendModelQuery && items.contains(where: { $0.name == "model" }) == false {
             items.append(URLQueryItem(name: "model", value: resolvedModel))
         }
         components.queryItems = items
@@ -45,7 +48,7 @@ extension OpenAIWebRTCBase {
                 metadata: [
                     "url": url.absoluteString,
                     "queryItems": summarizeQueryItems(items),
-                    "appendedModelQuery": hadModelQueryItem == false,
+                    "appendedModelQuery": appendModelQuery && hadModelQueryItem == false,
                     "endpointSummary": endpointSummary,
                 ]))
         if (endpointSummary["mode"] as? String) == "legacy_realtime_query_sdp" {
@@ -129,6 +132,37 @@ extension OpenAIWebRTCBase {
             result[String(describing: key)] = String(describing: value)
         }
         return result
+    }
+
+    func prettyJSONString(from jsonObject: Any) -> String? {
+        guard JSONSerialization.isValidJSONObject(jsonObject),
+            let data = try? JSONSerialization.data(withJSONObject: jsonObject, options: [.prettyPrinted]),
+            let string = String(data: data, encoding: .utf8)
+        else {
+            return nil
+        }
+        return string
+    }
+
+    func buildMultipartFormData(
+        boundary: String,
+        parts: [(name: String, contentType: String?, value: Data)]
+    ) -> Data {
+        var body = Data()
+
+        for part in parts {
+            body.append("--\(boundary)\r\n".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"\(part.name)\"\r\n".data(using: .utf8)!)
+            if let contentType = part.contentType {
+                body.append("Content-Type: \(contentType)\r\n".data(using: .utf8)!)
+            }
+            body.append("\r\n".data(using: .utf8)!)
+            body.append(part.value)
+            body.append("\r\n".data(using: .utf8)!)
+        }
+
+        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+        return body
     }
 
     func configureAudioSession(for output: AudioOutputPreference) throws {
@@ -682,6 +716,109 @@ extension OpenAIWebRTCBase {
 
         self.logger.log(
             "[VmWebrtc] " + "Received SDP answer from OpenAI",
+            attributes: logAttributes(
+                for: .debug,
+                metadata: [
+                    "sdpLength": answer.count,
+                    "responseHeaders": summarizeHTTPHeaders(httpResponse.allHeaderFields),
+                    "sdpSummary": analyzeSDP(answer),
+                ]))
+        return answer
+    }
+
+    func exchangeRealtimeCallWithOpenAI(
+        apiKey: String,
+        endpointURL: URL,
+        offerSDP: String,
+        session: [String: Any]
+    ) async throws -> String {
+        let endpointSummary = describeEndpoint(endpointURL)
+        let sdpSummary = analyzeSDP(offerSDP)
+        let sessionData = try JSONSerialization.data(withJSONObject: session, options: [])
+        let sessionPretty = prettyJSONString(from: session) ?? "<invalid_session_json>"
+        let boundary = "Boundary-\(UUID().uuidString)"
+        let requestBody = buildMultipartFormData(
+            boundary: boundary,
+            parts: [
+                (
+                    name: "sdp",
+                    contentType: "application/sdp",
+                    value: Data(offerSDP.utf8)
+                ),
+                (
+                    name: "session",
+                    contentType: "application/json",
+                    value: sessionData
+                ),
+            ])
+
+        self.logger.log(
+            "[VmWebrtc] Sending realtime call offer to OpenAI",
+            attributes: logAttributes(
+                for: .debug,
+                metadata: [
+                    "endpoint": endpointURL.absoluteString,
+                    "endpointSummary": endpointSummary,
+                    "requestMethod": "POST",
+                    "requestContentType": "multipart/form-data",
+                    "multipartBoundary": boundary,
+                    "apiKeyLength": apiKey.count,
+                    "sdpLength": offerSDP.count,
+                    "sdpSummary": sdpSummary,
+                    "sdp": offerSDP,
+                    "session": session,
+                    "sessionJSON": sessionPretty,
+                ]))
+
+        var request = URLRequest(url: endpointURL)
+        request.httpMethod = "POST"
+        request.httpBody = requestBody
+        request.setValue(
+            "multipart/form-data; boundary=\(boundary)",
+            forHTTPHeaderField: "Content-Type"
+        )
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            self.logger.log(
+                "[VmWebrtc] OpenAI realtime call response missing HTTP status",
+                attributes: logAttributes(for: .error))
+            throw OpenAIWebRTCError.openAIResponseDecoding
+        }
+
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            let responseBody = String(data: data, encoding: .utf8) ?? "<non_utf8_response_body>"
+            self.logger.log(
+                "[VmWebrtc] OpenAI rejected realtime call offer",
+                attributes: logAttributes(
+                    for: .error,
+                    metadata: [
+                        "status": httpResponse.statusCode,
+                        "endpoint": endpointURL.absoluteString,
+                        "endpointSummary": endpointSummary,
+                        "responseHeaders": summarizeHTTPHeaders(httpResponse.allHeaderFields),
+                        "responseBody": responseBody,
+                        "sdpSummary": sdpSummary,
+                        "session": session,
+                        "sessionJSON": sessionPretty,
+                    ]))
+            throw OpenAIWebRTCError.openAIRejected(
+                status: httpResponse.statusCode,
+                details: responseBody
+            )
+        }
+
+        guard let answer = String(data: data, encoding: .utf8), !answer.isEmpty else {
+            self.logger.log(
+                "[VmWebrtc] OpenAI realtime call returned an empty SDP answer",
+                attributes: logAttributes(for: .error))
+            throw OpenAIWebRTCError.openAIResponseDecoding
+        }
+
+        self.logger.log(
+            "[VmWebrtc] Received realtime call SDP answer from OpenAI",
             attributes: logAttributes(
                 for: .debug,
                 metadata: [

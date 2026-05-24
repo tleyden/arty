@@ -17,6 +17,7 @@ import { VoiceSpeedCustomization } from "../components/VoiceSpeedCustomization";
 import { loadShowRealtimeErrorAlerts } from "../lib/developerSettings";
 import { log } from "../lib/logger";
 import { composeMainPrompt } from "../lib/mainPrompt";
+import { getUserFacingRealtimeErrorMessage } from "../lib/realtimeUserError";
 import { TokenUsageTracker } from "../lib/tokenUsageTracker";
 import { loadTranscriptionPreference } from "../lib/transcriptionPreference";
 import type { VadMode } from "../lib/vadPreference";
@@ -173,10 +174,10 @@ export function VoiceChat({
           },
         );
         const message =
-          typeof payload?.error?.message === "string" &&
-          payload.error.message.trim().length > 0
-            ? payload.error.message.trim()
-            : "The voice session encountered an unexpected error.";
+          getUserFacingRealtimeErrorMessage(
+            payload?.error?.message,
+            "voice",
+          ) || "The voice session encountered an unexpected error.";
 
         // Only show alert if developer setting is enabled
         const shouldShowAlert = await loadShowRealtimeErrorAlerts();
@@ -523,8 +524,7 @@ export function VoiceChat({
         },
         error,
       );
-      const message =
-        error instanceof Error ? error.message : "Unexpected error";
+      const message = getUserFacingRealtimeErrorMessage(error, "voice");
 
       // Emit error status
       emitVoiceSessionStatus(`Connection failed: ${message}`);

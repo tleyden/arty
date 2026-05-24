@@ -10,7 +10,7 @@ final class OpenAIWebRTCClient: OpenAIWebRTCBase {
 
     // MARK: Subclass-provided endpoint constants
 
-    override var defaultEndpoint: String { "https://api.openai.com/v1/realtime" }
+    override var defaultEndpoint: String { "https://api.openai.com/v1/realtime/calls" }
     override var defaultModel: String { "gpt-realtime" }
 
     // MARK: Chat-specific stored properties
@@ -41,6 +41,7 @@ final class OpenAIWebRTCClient: OpenAIWebRTCBase {
     let audioMixPlayer = AudioMixPlayer()
 
     var toolDefinitions: [[String: Any]] = []
+    private var initialSessionConfiguration: [String: Any]?
     lazy var eventHandler = WebRTCEventHandler()
 
     // MARK: Init / deinit
@@ -69,7 +70,7 @@ final class OpenAIWebRTCClient: OpenAIWebRTCBase {
     // MARK: Virtual hook overrides
 
     override func dataChannelDidOpen() {
-        sendInitialSessionConfiguration()
+        handleDataChannelOpenAfterInitialSessionSetup()
     }
 
     override func handleDataChannelMessage(_ event: [String: Any]) {
@@ -220,17 +221,31 @@ final class OpenAIWebRTCClient: OpenAIWebRTCBase {
             attributes: logAttributes(
                 for: .info,
                 metadata: [
-                    "hasModel": (model?.isEmpty == false),
-                    "hasBaseURL": (baseURL?.isEmpty == false),
+                    "resolvedModel": resolvedModelName(model),
+                    "baseURL": baseURL ?? "",
                     "audioOutput": audioOutput.rawValue,
                     "voice": sessionVoice,
                 ]))
 
-        let endpointURL = try buildEndpointURL(baseURL: baseURL, model: model)
+        let endpointURL = try buildEndpointURL(
+            baseURL: baseURL,
+            model: model,
+            appendModelQuery: false
+        )
         self.logger.log(
             "[VmWebrtc] Resolved OpenAI endpoint",
             attributes: logAttributes(for: .debug, metadata: ["endpoint": endpointURL.absoluteString])
         )
+        let sessionConfiguration = buildInitialRealtimeSessionConfiguration(model: model)
+        initialSessionConfiguration = sessionConfiguration
+        self.logger.log(
+            "[VmWebrtc] Prepared initial realtime session configuration",
+            attributes: logAttributes(
+                for: .debug,
+                metadata: [
+                    "session": sessionConfiguration,
+                    "sessionJSON": prettyJSONString(from: sessionConfiguration) ?? "<invalid_session_json>",
+                ]))
 
         try configureAudioSession(for: audioOutput)
         self.logger.log(
@@ -296,8 +311,12 @@ final class OpenAIWebRTCClient: OpenAIWebRTCBase {
         emitModuleEvent(
             "onVoiceSessionStatus", payload: ["status_update": "Connecting to OpenAI endpoint..."])
 
-        let answerSDP = try await exchangeSDPWithOpenAI(
-            apiKey: resolvedApiKey, endpointURL: endpointURL, offerSDP: localSDP)
+        let answerSDP = try await exchangeRealtimeCallWithOpenAI(
+            apiKey: resolvedApiKey,
+            endpointURL: endpointURL,
+            offerSDP: localSDP,
+            session: sessionConfiguration
+        )
         let remoteDescription = RTCSessionDescription(type: .answer, sdp: answerSDP)
         try await setRemoteDescription(remoteDescription, for: connection)
         self.logger.log(
@@ -334,22 +353,19 @@ final class OpenAIWebRTCClient: OpenAIWebRTCBase {
         eventHandler.resetAudioStreamingState()
         eventHandler.resetFunctionCallState()
         eventHandler.shadowObserve_reset(reason: "connection_closed")
+        initialSessionConfiguration = nil
 
         return super.closeConnection()
     }
 
-    // MARK: Session configuration (sent once data channel opens)
+    // MARK: Session configuration / startup
 
-    func sendInitialSessionConfiguration() {
-        guard !hasSentInitialSessionConfig else { return }
+    private func resolvedModelName(_ model: String?) -> String {
+        let trimmedModel = model?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmedModel.isEmpty ? defaultModel : trimmedModel
+    }
 
-        guard let dataChannel, dataChannel.readyState == .open else {
-            self.logger.log(
-                "[VmWebrtc] Data channel not ready for initial session configuration",
-                attributes: logAttributes(for: .warn, metadata: ["hasChannel": dataChannel != nil]))
-            return
-        }
-
+    private func buildInitialRealtimeSessionConfiguration(model: String?) -> [String: Any] {
         let tools = buildTools()
 
         if tools.isEmpty && !toolDefinitions.isEmpty {
@@ -359,25 +375,43 @@ final class OpenAIWebRTCClient: OpenAIWebRTCBase {
                     for: .warn, metadata: ["definitionCount": toolDefinitions.count]))
         }
 
-        var session: [String: Any] = [
-            "instructions": sessionInstructions,
-            "voice": sessionVoice,
-            "tools": tools,
-        ]
+        var inputAudioConfig: [String: Any] = [:]
 
         switch turnDetectionMode {
         case .semantic:
-            session["turn_detection"] = [
+            inputAudioConfig["turn_detection"] = [
                 "type": "semantic_vad",
                 "create_response": true,
                 "eagerness": "low",
             ]
         case .server:
-            session["turn_detection"] = [
+            inputAudioConfig["turn_detection"] = [
                 "type": "server_vad",
                 "create_response": true,
             ]
         }
+
+        if transcriptionEnabled {
+            inputAudioConfig["transcription"] = ["model": "whisper-1"]
+        }
+
+        var audioConfig: [String: Any] = [
+            "output": [
+                "voice": sessionVoice,
+            ]
+        ]
+
+        if !inputAudioConfig.isEmpty {
+            audioConfig["input"] = inputAudioConfig
+        }
+
+        var session: [String: Any] = [
+            "type": "realtime",
+            "model": resolvedModelName(model),
+            "instructions": sessionInstructions,
+            "audio": audioConfig,
+            "tools": tools,
+        ]
 
         if let ratio = retentionRatio {
             session["truncation"] = [
@@ -386,24 +420,33 @@ final class OpenAIWebRTCClient: OpenAIWebRTCBase {
             ]
         }
 
-        if transcriptionEnabled {
-            session["input_audio_transcription"] = ["model": "whisper-1"]
+        return session
+    }
+
+    func handleDataChannelOpenAfterInitialSessionSetup() {
+        guard !hasSentInitialSessionConfig else { return }
+
+        guard let dataChannel, dataChannel.readyState == .open else {
+            self.logger.log(
+                "[VmWebrtc] Data channel not ready for initial session configuration",
+                attributes: logAttributes(for: .warn, metadata: ["hasChannel": dataChannel != nil]))
+            return
         }
 
-        if let prettyData = try? JSONSerialization.data(
-            withJSONObject: session, options: [.prettyPrinted]),
-            let prettyString = String(data: prettyData, encoding: .utf8)
-        {
+        if let session = initialSessionConfiguration {
             self.logger.log(
-                "📑 [VmWebrtc] Sending session.update payload",
-                attributes: logAttributes(for: .debug, metadata: ["session": prettyString]))
+                "📑 [VmWebrtc] Initial session already configured via /v1/realtime/calls",
+                attributes: logAttributes(
+                    for: .debug,
+                    metadata: [
+                        "session": session,
+                        "sessionJSON": prettyJSONString(from: session) ?? "<invalid_session_json>",
+                    ]))
         } else {
             self.logger.log(
-                "📑 [VmWebrtc] Sending session.update payload (fallback formatting)",
-                attributes: logAttributes(for: .debug, metadata: ["session": session]))
+                "[VmWebrtc] Missing cached initial session configuration when data channel opened",
+                attributes: logAttributes(for: .warn))
         }
-
-        _ = sendEvent(["type": "session.update", "session": session])
 
         Task { @MainActor in
             self.emitModuleEvent(
