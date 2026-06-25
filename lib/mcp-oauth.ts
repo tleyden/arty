@@ -115,7 +115,7 @@ export async function performMcpOAuthFlow(
     responseType: AuthSession.ResponseType.Code,
     redirectUri,
     scopes: [],
-    usePKCE: !clientSecret,
+    usePKCE: true,
     extraParams: { resource: resourceMetadata.resource },
   });
 

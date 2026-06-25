@@ -146,18 +146,15 @@ beforeEach(() => {
 });
 
 describe("performMcpOAuthFlow", () => {
-  test("uses static credentials without probing resource metadata and disables PKCE for confidential clients", async () => {
+  test("uses PKCE for static client secrets and still sends the secret during token exchange", async () => {
     const result = await (oauthModule.performMcpOAuthFlow as any)(
       "extension-1",
-      "",
+      "https://resource.example.com/.well-known/oauth-protected-resource",
       "Static Connector",
       undefined,
       {
         clientId: "static-client-id",
         clientSecret: "static-client-secret",
-        authorizationEndpoint: "https://provider.example.com/authorize",
-        tokenEndpoint: "https://provider.example.com/token",
-        scopes: ["openid", "profile"],
       },
     );
 
@@ -168,13 +165,16 @@ describe("performMcpOAuthFlow", () => {
     });
     expect(authState.lastAuthRequestConfig).toMatchObject({
       clientId: "static-client-id",
-      scopes: ["openid", "profile"],
-      usePKCE: false,
+      scopes: [],
+      usePKCE: true,
+      extraParams: { resource: "https://resource.example.com" },
     });
     expect(authState.exchangeCalls[0]).toMatchObject({
+      code: "auth-code",
       clientId: "static-client-id",
       clientSecret: "static-client-secret",
-      tokenEndpoint: "https://provider.example.com/token",
+      tokenEndpoint: "https://auth.example.com/token",
+      extraParams: { code_verifier: "generated-code-verifier" },
     });
     expect(secureState.savedClientIds).toContainEqual({
       id: "extension-1",
@@ -197,7 +197,7 @@ describe("performMcpOAuthFlow", () => {
       "vibemachine://mcp-oauth-callback?code=manual-code",
       {
         extensionId: "extension-2",
-        codeVerifier: "",
+        codeVerifier: "manual-code-verifier",
         redirectUri: "vibemachine://mcp-oauth-callback",
         clientId: "static-client-id",
         tokenEndpoint: "https://provider.example.com/token",
@@ -211,6 +211,7 @@ describe("performMcpOAuthFlow", () => {
       code: "manual-code",
       clientId: "static-client-id",
       clientSecret: "stored-static-secret",
+      extraParams: { code_verifier: "manual-code-verifier" },
     });
   });
 });
