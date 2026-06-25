@@ -80,9 +80,6 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
   const [authMethod, setAuthMethod] = useState<McpConnectorAuthMethod>("auto");
   const [staticClientId, setStaticClientId] = useState("");
   const [staticClientSecret, setStaticClientSecret] = useState("");
-  const [staticAuthEndpoint, setStaticAuthEndpoint] = useState("");
-  const [staticTokenEndpoint, setStaticTokenEndpoint] = useState("");
-  const [staticScopes, setStaticScopes] = useState("");
   const [staticSecretVisible, setStaticSecretVisible] = useState(false);
   const [pendingOAuth, setPendingOAuth] = useState<McpOAuthPendingState | null>(null);
   const [pendingExtensionId, setPendingExtensionId] = useState<string | null>(null);
@@ -97,9 +94,6 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
       setName(existingExtension.name);
       setServerUrl(existingExtension.serverUrl);
       setNormalizedNamePreview(existingExtension.normalizedName ?? toNormalizedName(existingExtension.name));
-      setStaticAuthEndpoint("");
-      setStaticTokenEndpoint("");
-      setStaticScopes("");
       setStaticSecretVisible(false);
       setPendingOAuth(null);
       setPendingExtensionId(null);
@@ -140,9 +134,6 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
       setAuthMethod("auto");
       setStaticClientId("");
       setStaticClientSecret("");
-      setStaticAuthEndpoint("");
-      setStaticTokenEndpoint("");
-      setStaticScopes("");
       setStaticSecretVisible(false);
       setPendingOAuth(null);
       setPendingExtensionId(null);
@@ -266,8 +257,6 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
         serverUrl,
         authMethod,
         staticClientId,
-        staticAuthorizationEndpoint: staticAuthEndpoint,
-        staticTokenEndpoint,
       });
       if (validationError) {
         Alert.alert("Missing Field", validationError, [{ text: "OK" }]);
@@ -276,21 +265,26 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
 
       if (authMethod === "static") {
         const id = existingExtension?.id ?? `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-        setConnectingLabel("Opening sign-in…");
 
+        // Probe the server to discover OAuth endpoints, same as the auto/DCR flow.
+        const probeResult = await probeMcpServer(serverUrl, undefined, name);
+        if (probeResult.statusCode !== 401 || !probeResult.resourceMetadataUrl) {
+          const detail = probeResult.error ?? `Server returned ${probeResult.statusCode}`;
+          Alert.alert("Connection Failed", detail, [{ text: "OK" }]);
+          return;
+        }
+
+        setConnectingLabel("Opening sign-in…");
         const staticCredentials: StaticOAuthCredentials = buildStaticOAuthCredentials({
           clientId: staticClientId,
           clientSecret: staticClientSecret,
-          authorizationEndpoint: staticAuthEndpoint,
-          tokenEndpoint: staticTokenEndpoint,
-          scopes: staticScopes,
         });
 
         try {
           onBeforeBrowserOpen?.();
           const oauthResult = await performMcpOAuthFlow(
             id,
-            "",
+            probeResult.resourceMetadataUrl,
             name,
             undefined,
             staticCredentials,
@@ -401,9 +395,6 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
     setAuthMethod("auto");
     setStaticClientId("");
     setStaticClientSecret("");
-    setStaticAuthEndpoint("");
-    setStaticTokenEndpoint("");
-    setStaticScopes("");
     setStaticSecretVisible(false);
     setPendingOAuth(null);
     setPendingExtensionId(null);
@@ -579,7 +570,7 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
                     <Text style={styles.hint}>
                       {authMethod === "auto"
                         ? "Automatically discover OAuth endpoints and register a public client."
-                        : "Use an existing OAuth client ID and optional client secret with manually entered endpoints."}
+                        : "Use an existing OAuth client ID and optional client secret. Endpoints are auto-discovered from the MCP server."}
                     </Text>
                   </View>
 
@@ -628,52 +619,6 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
                         </Text>
                       </View>
 
-                      <View style={styles.section}>
-                        <Text style={styles.label}>Authorization Endpoint *</Text>
-                        <TextInput
-                          style={styles.input}
-                          value={staticAuthEndpoint}
-                          onChangeText={setStaticAuthEndpoint}
-                          placeholder="https://provider.com/oauth/authorize"
-                          placeholderTextColor="#AEAEB2"
-                          autoCapitalize="none"
-                          autoCorrect={false}
-                          keyboardType="url"
-                        />
-                      </View>
-
-                      <View style={styles.section}>
-                        <Text style={styles.label}>Token Endpoint *</Text>
-                        <TextInput
-                          style={styles.input}
-                          value={staticTokenEndpoint}
-                          onChangeText={setStaticTokenEndpoint}
-                          placeholder="https://provider.com/oauth/token"
-                          placeholderTextColor="#AEAEB2"
-                          autoCapitalize="none"
-                          autoCorrect={false}
-                          keyboardType="url"
-                        />
-                        <Text style={styles.hint}>
-                          Static endpoints are not persisted for display. Re-enter them here when you need to re-authenticate.
-                        </Text>
-                      </View>
-
-                      <View style={styles.section}>
-                        <Text style={styles.label}>Scopes</Text>
-                        <TextInput
-                          style={styles.input}
-                          value={staticScopes}
-                          onChangeText={setStaticScopes}
-                          placeholder="openid, profile, email"
-                          placeholderTextColor="#AEAEB2"
-                          autoCapitalize="none"
-                          autoCorrect={false}
-                        />
-                        <Text style={styles.hint}>
-                          Comma-separated scopes requested during authorization.
-                        </Text>
-                      </View>
                     </>
                   ) : (
                     <>

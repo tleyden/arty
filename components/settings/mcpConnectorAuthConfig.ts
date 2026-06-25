@@ -23,9 +23,6 @@ export type DerivedMcpConnectorAuthState = {
 type StaticOAuthCredentialInput = {
   clientId: string;
   clientSecret: string;
-  authorizationEndpoint: string;
-  tokenEndpoint: string;
-  scopes: string;
 };
 
 type ValidateMcpConnectorFormInput = {
@@ -33,8 +30,6 @@ type ValidateMcpConnectorFormInput = {
   serverUrl: string;
   authMethod: McpConnectorAuthMethod;
   staticClientId: string;
-  staticAuthorizationEndpoint: string;
-  staticTokenEndpoint: string;
 };
 
 export function deriveMcpConnectorAuthState(
@@ -67,17 +62,9 @@ export function deriveMcpConnectorAuthState(
 export function buildStaticOAuthCredentials(
   input: StaticOAuthCredentialInput,
 ): StaticOAuthCredentials {
-  const scopes = input.scopes
-    .split(",")
-    .map((scope) => scope.trim())
-    .filter(Boolean);
-
   return {
     clientId: input.clientId.trim(),
     clientSecret: input.clientSecret.trim() || undefined,
-    authorizationEndpoint: input.authorizationEndpoint.trim(),
-    tokenEndpoint: input.tokenEndpoint.trim(),
-    scopes: scopes.length > 0 ? scopes : undefined,
   };
 }
 
@@ -90,14 +77,8 @@ export function validateMcpConnectorForm(
   if (!input.serverUrl.trim()) {
     return "MCP Server URL is required.";
   }
-  if (input.authMethod !== "static") {
-    return null;
-  }
-  if (!input.staticClientId.trim()) {
+  if (input.authMethod === "static" && !input.staticClientId.trim()) {
     return "Client ID is required for static OAuth.";
-  }
-  if (!input.staticAuthorizationEndpoint.trim() || !input.staticTokenEndpoint.trim()) {
-    return "Authorization and Token endpoints are required.";
   }
   return null;
 }

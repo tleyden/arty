@@ -47,35 +47,50 @@ describe("deriveMcpConnectorAuthState", () => {
 });
 
 describe("buildStaticOAuthCredentials", () => {
-  test("trims endpoints and splits comma separated scopes", () => {
+  test("trims client id and omits blank secret", () => {
     expect(
       buildStaticOAuthCredentials({
         clientId: "  client-id  ",
         clientSecret: "   ",
-        authorizationEndpoint: " https://provider.example.com/authorize ",
-        tokenEndpoint: " https://provider.example.com/token ",
-        scopes: "openid, profile , email",
       }),
     ).toEqual({
       clientId: "client-id",
-      authorizationEndpoint: "https://provider.example.com/authorize",
-      tokenEndpoint: "https://provider.example.com/token",
-      scopes: ["openid", "profile", "email"],
+    });
+  });
+
+  test("includes client secret when provided", () => {
+    expect(
+      buildStaticOAuthCredentials({
+        clientId: "client-id",
+        clientSecret: "my-secret",
+      }),
+    ).toEqual({
+      clientId: "client-id",
+      clientSecret: "my-secret",
     });
   });
 });
 
 describe("validateMcpConnectorForm", () => {
-  test("requires full static OAuth inputs in static mode", () => {
+  test("requires client ID in static mode", () => {
     expect(
       validateMcpConnectorForm({
         name: "Static Connector",
         serverUrl: "https://mcp.example.com",
         authMethod: "static",
         staticClientId: "",
-        staticAuthorizationEndpoint: "",
-        staticTokenEndpoint: "",
       }),
     ).toBe("Client ID is required for static OAuth.");
+  });
+
+  test("passes with only client ID in static mode", () => {
+    expect(
+      validateMcpConnectorForm({
+        name: "Static Connector",
+        serverUrl: "https://mcp.example.com",
+        authMethod: "static",
+        staticClientId: "my-client-id",
+      }),
+    ).toBeNull();
   });
 });

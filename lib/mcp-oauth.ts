@@ -35,12 +35,11 @@ export type McpOAuthFlowResult =
   | { type: "success"; accessToken: string; refreshToken?: string }
   | { type: "needs_manual_callback"; pendingState: McpOAuthPendingState };
 
+// Static client credentials — only the client ID and optional secret are needed.
+// OAuth endpoints are auto-discovered from the MCP server, just like DCR mode.
 export interface StaticOAuthCredentials {
   clientId: string;
   clientSecret?: string;
-  authorizationEndpoint: string;
-  tokenEndpoint: string;
-  scopes?: string[];
 }
 
 export async function performMcpOAuthFlow(
@@ -50,21 +49,14 @@ export async function performMcpOAuthFlow(
   extensionInfo?: { serverUrl: string; normalizedName: string },
   staticCredentials?: StaticOAuthCredentials,
 ): Promise<McpOAuthFlowResult> {
-  if (staticCredentials) {
-    log.info(
-      "[mcp_oauth] Starting OAuth flow with static credentials",
-      {},
-      { extension_id: extensionId, connector_name: connectorName },
-    );
-    return performStaticOAuthFlow(extensionId, staticCredentials, connectorName);
-  }
-
+  const mode = staticCredentials ? "static" : "dcr";
   log.info(
-    "[mcp_oauth] Starting OAuth flow with DCR",
+    "[mcp_oauth] Starting OAuth flow",
     {},
-    { extension_id: extensionId, connector_name: connectorName },
+    { extension_id: extensionId, connector_name: connectorName, mode },
   );
 
+  // Both DCR and static share OAuth endpoint discovery from the MCP server.
   const resourceMetadata = await fetchResourceMetadata(resourceMetadataUrl, connectorName);
   const authServerUrl = resourceMetadata.authorizationServers[0];
   const oauthMeta = await fetchOAuthServerMetadata(authServerUrl, connectorName);
@@ -74,23 +66,44 @@ export async function performMcpOAuthFlow(
     path: "mcp-oauth-callback",
   });
 
-  let clientId = await getMcpClientId(extensionId);
-  if (!clientId) {
-    if (!oauthMeta.registrationEndpoint) {
-      throw new Error(
-        "Server requires OAuth but has no registration_endpoint and no cached client_id",
-      );
-    }
-    const reg = await registerOAuthClient(
-      oauthMeta.registrationEndpoint,
-      redirectUri,
-      connectorName,
-    );
-    clientId = reg.clientId;
+  let clientId: string;
+  let clientSecret: string | undefined;
+
+  if (staticCredentials) {
+    // Static mode: use provided credentials, skip dynamic client registration.
+    clientId = staticCredentials.clientId;
+    clientSecret = staticCredentials.clientSecret;
     await saveMcpClientId(extensionId, clientId);
+    if (clientSecret) {
+      await saveMcpClientSecret(extensionId, clientSecret);
+    } else {
+      await deleteMcpClientSecret(extensionId);
+    }
+    await saveMcpAuthMode(extensionId, "static");
+  } else {
+    // DCR mode: register a new public client or reuse a cached one.
+    const cachedId = await getMcpClientId(extensionId);
+    if (cachedId) {
+      clientId = cachedId;
+    } else {
+      if (!oauthMeta.registrationEndpoint) {
+        throw new Error(
+          "Server requires OAuth but has no registration_endpoint and no cached client_id",
+        );
+      }
+      const reg = await registerOAuthClient(
+        oauthMeta.registrationEndpoint,
+        redirectUri,
+        connectorName,
+      );
+      clientId = reg.clientId;
+      await saveMcpClientId(extensionId, clientId);
+    }
+    await deleteMcpClientSecret(extensionId);
+    await saveMcpAuthMode(extensionId, "dcr");
   }
-  await deleteMcpClientSecret(extensionId);
-  await saveMcpAuthMode(extensionId, "dcr");
+
+  await saveMcpTokenEndpoint(extensionId, oauthMeta.tokenEndpoint);
 
   const discovery = {
     authorizationEndpoint: oauthMeta.authorizationEndpoint,
@@ -102,7 +115,7 @@ export async function performMcpOAuthFlow(
     responseType: AuthSession.ResponseType.Code,
     redirectUri,
     scopes: [],
-    usePKCE: true,
+    usePKCE: !clientSecret,
     extraParams: { resource: resourceMetadata.resource },
   });
 
@@ -120,9 +133,9 @@ export async function performMcpOAuthFlow(
   };
 
   log.info(
-    "[mcp_oauth] Step 5: opening browser for authorization",
+    "[mcp_oauth] Opening browser for authorization",
     {},
-    { connector_name: connectorName },
+    { connector_name: connectorName, mode },
   );
 
   const result = await request.promptAsync(discovery);
@@ -139,7 +152,7 @@ export async function performMcpOAuthFlow(
 
   if (result.type === "success" && result.params.code) {
     log.info(
-      "[mcp_oauth] Step 6: exchanging code for token",
+      "[mcp_oauth] Exchanging code for token",
       {},
       { connector_name: connectorName },
     );
@@ -151,7 +164,7 @@ export async function performMcpOAuthFlow(
       oauthMeta.tokenEndpoint,
       extensionId,
       connectorName,
-      undefined,
+      clientSecret,
     );
     return { type: "success", ...tokens };
   }
@@ -166,107 +179,8 @@ export async function performMcpOAuthFlow(
     throw new Error(`OAuth error: ${detail}`);
   }
 
-  // Browser was dismissed or redirect wasn't intercepted — surface manual paste UI
   log.info(
     "[mcp_oauth] Browser closed without redirect, returning manual callback state",
-    {},
-    { connector_name: connectorName, result_type: result.type },
-  );
-  return { type: "needs_manual_callback", pendingState };
-}
-
-async function performStaticOAuthFlow(
-  extensionId: string,
-  credentials: StaticOAuthCredentials,
-  connectorName?: string,
-): Promise<McpOAuthFlowResult> {
-  const redirectUri = AuthSession.makeRedirectUri({
-    scheme: "vibemachine",
-    path: "mcp-oauth-callback",
-  });
-
-  await saveMcpClientId(extensionId, credentials.clientId);
-  if (credentials.clientSecret) {
-    await saveMcpClientSecret(extensionId, credentials.clientSecret);
-  } else {
-    await deleteMcpClientSecret(extensionId);
-  }
-  await saveMcpTokenEndpoint(extensionId, credentials.tokenEndpoint);
-  await saveMcpAuthMode(extensionId, "static");
-
-  const discovery = {
-    authorizationEndpoint: credentials.authorizationEndpoint,
-    tokenEndpoint: credentials.tokenEndpoint,
-  };
-
-  const request = new AuthSession.AuthRequest({
-    clientId: credentials.clientId,
-    responseType: AuthSession.ResponseType.Code,
-    redirectUri,
-    scopes: credentials.scopes ?? [],
-    usePKCE: !credentials.clientSecret,
-  });
-
-  await request.makeAuthUrlAsync(discovery);
-
-  const pendingState: McpOAuthPendingState = {
-    extensionId,
-    codeVerifier: request.codeVerifier ?? "",
-    redirectUri,
-    clientId: credentials.clientId,
-    tokenEndpoint: credentials.tokenEndpoint,
-    extensionName: connectorName ?? "",
-    extensionServerUrl: "",
-    extensionNormalizedName: "",
-  };
-
-  log.info(
-    "[mcp_oauth] Opening browser for static OAuth authorization",
-    {},
-    { connector_name: connectorName },
-  );
-
-  const result = await request.promptAsync(discovery);
-
-  log.info(
-    "[mcp_oauth] Static OAuth promptAsync returned",
-    {},
-    {
-      result_type: result.type,
-      error: (result as any).error ?? undefined,
-      connector_name: connectorName,
-    },
-  );
-
-  if (result.type === "success" && result.params.code) {
-    const tokens = await exchangeAndStore(
-      result.params.code,
-      credentials.clientId,
-      redirectUri,
-      request.codeVerifier ?? "",
-      credentials.tokenEndpoint,
-      extensionId,
-      connectorName,
-      credentials.clientSecret,
-    );
-    return { type: "success", ...tokens };
-  }
-
-  if (result.type === "error") {
-    const detail =
-      (result as any).error_description ??
-      (result as any).error ??
-      JSON.stringify((result as any).params ?? result);
-    log.error(
-      "[mcp_oauth] Static OAuth error",
-      {},
-      { connector_name: connectorName, result_type: result.type, error: detail },
-    );
-    throw new Error(`OAuth error: ${detail}`);
-  }
-
-  log.info(
-    "[mcp_oauth] Browser closed, returning manual callback state",
     {},
     { connector_name: connectorName, result_type: result.type },
   );
