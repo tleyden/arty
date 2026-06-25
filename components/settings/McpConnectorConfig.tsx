@@ -17,10 +17,16 @@ import * as Clipboard from "expo-clipboard";
 import { probeMcpServer } from "../../modules/vm-webrtc/src/mcp_client/extensions";
 import {
   addMcpExtension,
+  clearMcpAuthCredentials,
+  deleteMcpClientSecret,
   deleteMcpBearerToken,
+  getMcpAuthMode,
   getMcpBearerToken,
+  getMcpClientId,
+  getMcpClientSecret,
   getMcpExtensions,
   getMcpRefreshToken,
+  saveMcpAuthMode,
   saveMcpBearerToken,
   toNormalizedName,
   uniqueNormalizedName,
@@ -30,9 +36,17 @@ import {
   completeMcpOAuthFromCallbackUrl,
   performMcpOAuthFlow,
   type McpOAuthPendingState,
+  type StaticOAuthCredentials,
 } from "../../lib/mcp-oauth";
 import { CONNECTOR_SETTINGS_CHANGED_EVENT } from "../../modules/vm-webrtc/src/ToolkitManager";
 import { log } from "../../lib/logger";
+import {
+  buildStaticOAuthCredentials,
+  deriveMcpConnectorAuthState,
+  validateMcpConnectorForm,
+  type McpConnectorAuthMethod,
+  type McpStoredAuthMode,
+} from "./mcpConnectorAuthConfig";
 
 export interface McpConnectorConfigProps {
   visible: boolean;
@@ -63,32 +77,82 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
   const [tokenVisible, setTokenVisible] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState(false);
   const [hasOAuthToken, setHasOAuthToken] = useState(false);
+  const [authMethod, setAuthMethod] = useState<McpConnectorAuthMethod>("auto");
+  const [staticClientId, setStaticClientId] = useState("");
+  const [staticClientSecret, setStaticClientSecret] = useState("");
+  const [staticAuthEndpoint, setStaticAuthEndpoint] = useState("");
+  const [staticTokenEndpoint, setStaticTokenEndpoint] = useState("");
+  const [staticScopes, setStaticScopes] = useState("");
+  const [staticSecretVisible, setStaticSecretVisible] = useState(false);
   const [pendingOAuth, setPendingOAuth] = useState<McpOAuthPendingState | null>(null);
   const [pendingExtensionId, setPendingExtensionId] = useState<string | null>(null);
+  const [pendingAuthMode, setPendingAuthMode] = useState<McpStoredAuthMode>(null);
   const [callbackUrl, setCallbackUrl] = useState("");
   const [callbackError, setCallbackError] = useState("");
   const [keyboardPadding, setKeyboardPadding] = useState(0);
 
   useEffect(() => {
+    let cancelled = false;
     if (visible && existingExtension) {
       setName(existingExtension.name);
       setServerUrl(existingExtension.serverUrl);
       setNormalizedNamePreview(existingExtension.normalizedName ?? toNormalizedName(existingExtension.name));
+      setStaticAuthEndpoint("");
+      setStaticTokenEndpoint("");
+      setStaticScopes("");
+      setStaticSecretVisible(false);
+      setPendingOAuth(null);
+      setPendingExtensionId(null);
+      setPendingAuthMode(null);
+      setCallbackUrl("");
+      setCallbackError("");
       Promise.all([
         getMcpBearerToken(existingExtension.id),
         getMcpRefreshToken(existingExtension.id),
-      ]).then(([token, refreshToken]) => {
-        if (refreshToken) {
-          setHasOAuthToken(true);
-        } else if (token) {
-          setBearerToken(token);
-          setAdvancedExpanded(true);
+        getMcpAuthMode(existingExtension.id),
+        getMcpClientId(existingExtension.id),
+        getMcpClientSecret(existingExtension.id),
+      ]).then(([token, refreshToken, storedAuthMode, clientId, clientSecret]) => {
+        if (cancelled) {
+          return;
         }
+        const derived = deriveMcpConnectorAuthState({
+          token,
+          refreshToken,
+          authMode: (storedAuthMode ?? existingExtension.authMode ?? null) as McpStoredAuthMode,
+          clientId,
+          clientSecret,
+        });
+        setHasOAuthToken(derived.hasOAuthToken);
+        setAuthMethod(derived.authMethod);
+        setAdvancedExpanded(derived.advancedExpanded);
+        setBearerToken(derived.bearerToken);
+        setStaticClientId(derived.staticClientId);
+        setStaticClientSecret(derived.staticClientSecret);
       });
     } else if (visible) {
+      setName("");
+      setServerUrl("");
+      setBearerToken("");
       setNormalizedNamePreview("");
       setHasOAuthToken(false);
+      setAdvancedExpanded(false);
+      setAuthMethod("auto");
+      setStaticClientId("");
+      setStaticClientSecret("");
+      setStaticAuthEndpoint("");
+      setStaticTokenEndpoint("");
+      setStaticScopes("");
+      setStaticSecretVisible(false);
+      setPendingOAuth(null);
+      setPendingExtensionId(null);
+      setPendingAuthMode(null);
+      setCallbackUrl("");
+      setCallbackError("");
     }
+    return () => {
+      cancelled = true;
+    };
   }, [visible, existingExtension]);
 
   useEffect(() => {
@@ -132,18 +196,53 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
   const persistExtension = async (
     id: string,
     manualToken?: string,
-    options?: { preserveExistingToken?: boolean },
+    options?: {
+      preserveExistingToken?: boolean;
+      authMode?: "dcr" | "static" | "bearer";
+    },
   ) => {
-    log.info("[mcp_connector] persistExtension start", {}, { id, isEditing, hasManualToken: !!manualToken, preserveExistingToken: options?.preserveExistingToken });
+    log.info(
+      "[mcp_connector] persistExtension start",
+      {},
+      {
+        id,
+        isEditing,
+        hasManualToken: !!manualToken,
+        preserveExistingToken: options?.preserveExistingToken,
+        authMode: options?.authMode,
+      },
+    );
     const allExtensions = await getMcpExtensions();
     const normalizedName = uniqueNormalizedName(toNormalizedName(name), allExtensions, existingExtension?.id);
-    const record: McpExtensionRecord = { id, name, normalizedName, serverUrl };
+    const record: McpExtensionRecord = {
+      id,
+      name,
+      normalizedName,
+      serverUrl,
+      authMode: options?.authMode,
+    };
     await addMcpExtension(record);
-    if (manualToken) {
+
+    if (options?.authMode === "bearer" && manualToken) {
       await saveMcpBearerToken(id, manualToken);
-    } else if (!options?.preserveExistingToken) {
+      await clearMcpAuthCredentials(id);
+      await saveMcpAuthMode(id, "bearer");
+    } else if (options?.authMode === "dcr") {
+      if (!options.preserveExistingToken) {
+        await deleteMcpBearerToken(id);
+      }
+      await deleteMcpClientSecret(id);
+      await saveMcpAuthMode(id, "dcr");
+    } else if (options?.authMode === "static") {
+      if (!options.preserveExistingToken) {
+        await deleteMcpBearerToken(id);
+      }
+      await saveMcpAuthMode(id, "static");
+    } else {
       await deleteMcpBearerToken(id);
+      await clearMcpAuthCredentials(id);
     }
+
     DeviceEventEmitter.emit(CONNECTOR_SETTINGS_CHANGED_EVENT);
     log.info("[mcp_connector] calling onSave", {}, { id });
     onSave?.(record);
@@ -162,12 +261,69 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
     setIsConnecting(true);
     setConnectingLabel("Connecting…");
     try {
+      const validationError = validateMcpConnectorForm({
+        name,
+        serverUrl,
+        authMethod,
+        staticClientId,
+        staticAuthorizationEndpoint: staticAuthEndpoint,
+        staticTokenEndpoint,
+      });
+      if (validationError) {
+        Alert.alert("Missing Field", validationError, [{ text: "OK" }]);
+        return;
+      }
+
+      if (authMethod === "static") {
+        const id = existingExtension?.id ?? `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        setConnectingLabel("Opening sign-in…");
+
+        const staticCredentials: StaticOAuthCredentials = buildStaticOAuthCredentials({
+          clientId: staticClientId,
+          clientSecret: staticClientSecret,
+          authorizationEndpoint: staticAuthEndpoint,
+          tokenEndpoint: staticTokenEndpoint,
+          scopes: staticScopes,
+        });
+
+        try {
+          onBeforeBrowserOpen?.();
+          const oauthResult = await performMcpOAuthFlow(
+            id,
+            "",
+            name,
+            undefined,
+            staticCredentials,
+          );
+          log.info("[mcp_connector] Static OAuth flow returned", {}, { oauthResult_type: oauthResult.type });
+          if (oauthResult.type === "success") {
+            await persistExtension(id, undefined, {
+              preserveExistingToken: true,
+              authMode: "static",
+            });
+          } else {
+            setPendingOAuth(oauthResult.pendingState);
+            setPendingExtensionId(id);
+            setPendingAuthMode("static");
+            onNeedsManualCallback?.();
+          }
+        } catch (oauthError: any) {
+          log.error("[mcp_connector] Static OAuth error caught", {}, { message: oauthError?.message });
+          Alert.alert(
+            "Authentication Failed",
+            oauthError?.message ?? "OAuth sign-in failed.",
+            [{ text: "OK" }],
+          );
+        }
+        return;
+      }
+
       const token = bearerToken.trim() || undefined;
       const result = await probeMcpServer(serverUrl, token, name);
 
       if (result.success) {
         const id = existingExtension?.id ?? `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-        await persistExtension(id, token);
+        await persistExtension(id, token, { authMode: token ? "bearer" : undefined });
       } else if (result.statusCode === 401 && result.resourceMetadataUrl) {
         const id = existingExtension?.id ?? `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         setConnectingLabel("Opening sign-in…");
@@ -179,10 +335,14 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
           const oauthResult = await performMcpOAuthFlow(id, result.resourceMetadataUrl, name, { serverUrl, normalizedName });
           log.info("[mcp_connector] OAuth flow returned", {}, { oauthResult_type: oauthResult.type });
           if (oauthResult.type === "success") {
-            await persistExtension(id, undefined, { preserveExistingToken: true });
+            await persistExtension(id, undefined, {
+              preserveExistingToken: true,
+              authMode: "dcr",
+            });
           } else {
             setPendingOAuth(oauthResult.pendingState);
             setPendingExtensionId(id);
+            setPendingAuthMode("dcr");
             onNeedsManualCallback?.();
           }
         } catch (oauthError: any) {
@@ -217,7 +377,10 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
     setConnectingLabel("Completing sign-in…");
     try {
       await completeMcpOAuthFromCallbackUrl(callbackUrl.trim(), pendingOAuth);
-      await persistExtension(pendingExtensionId, undefined, { preserveExistingToken: true });
+      await persistExtension(pendingExtensionId, undefined, {
+        preserveExistingToken: true,
+        authMode: pendingAuthMode === "static" || pendingAuthMode === "dcr" ? pendingAuthMode : undefined,
+      });
     } catch (err: any) {
       setCallbackError(err?.message ?? "Failed to complete sign-in. Check the URL and try again.");
     } finally {
@@ -235,8 +398,16 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
     setAdvancedExpanded(false);
     setTokenVisible(false);
     setHasOAuthToken(false);
+    setAuthMethod("auto");
+    setStaticClientId("");
+    setStaticClientSecret("");
+    setStaticAuthEndpoint("");
+    setStaticTokenEndpoint("");
+    setStaticScopes("");
+    setStaticSecretVisible(false);
     setPendingOAuth(null);
     setPendingExtensionId(null);
+    setPendingAuthMode(null);
     setCallbackUrl("");
     setCallbackError("");
     onClose();
@@ -363,63 +534,208 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
 
               {advancedExpanded && (
                 <View style={styles.advancedSection}>
-                  <Text style={styles.label}>Bearer Token</Text>
-
-                  <View style={styles.tokenInputRow}>
-                    <TextInput
-                      style={[styles.input, styles.tokenInput]}
-                      value={bearerToken}
-                      onChangeText={handleTokenChange}
-                      placeholder="Optional JWT or access token..."
-                      placeholderTextColor="#AEAEB2"
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      secureTextEntry={!tokenVisible}
-                      multiline={false}
-                    />
-                    <Pressable
-                      style={({ pressed }) => [
-                        styles.tokenIconButton,
-                        pressed && styles.tokenIconButtonPressed,
-                      ]}
-                      onPress={() => setTokenVisible((v) => !v)}
-                    >
-                      <Text style={styles.tokenIconText}>
-                        {tokenVisible ? "🙈" : "👁️"}
-                      </Text>
-                    </Pressable>
+                  <View style={styles.section}>
+                    <Text style={styles.label}>OAuth Method</Text>
+                    <View style={styles.segmentControl}>
+                      <Pressable
+                        style={[
+                          styles.segment,
+                          authMethod === "auto" && styles.segmentActive,
+                        ]}
+                        onPress={() => {
+                          setAuthMethod("auto");
+                          setAdvancedExpanded(true);
+                        }}
+                      >
+                        <Text
+                          style={[
+                            styles.segmentText,
+                            authMethod === "auto" && styles.segmentTextActive,
+                          ]}
+                        >
+                          Auto (DCR)
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        style={[
+                          styles.segment,
+                          authMethod === "static" && styles.segmentActive,
+                        ]}
+                        onPress={() => {
+                          setAuthMethod("static");
+                          setAdvancedExpanded(true);
+                        }}
+                      >
+                        <Text
+                          style={[
+                            styles.segmentText,
+                            authMethod === "static" && styles.segmentTextActive,
+                          ]}
+                        >
+                          Static Credentials
+                        </Text>
+                      </Pressable>
+                    </View>
+                    <Text style={styles.hint}>
+                      {authMethod === "auto"
+                        ? "Automatically discover OAuth endpoints and register a public client."
+                        : "Use an existing OAuth client ID and optional client secret with manually entered endpoints."}
+                    </Text>
                   </View>
 
-                  <View style={styles.tokenActions}>
-                    <Pressable
-                      style={({ pressed }) => [
-                        styles.tokenActionButton,
-                        pressed && styles.tokenActionButtonPressed,
-                      ]}
-                      onPress={handlePaste}
-                    >
-                      <Text style={styles.tokenActionText}>Paste</Text>
-                    </Pressable>
-                    <Pressable
-                      style={({ pressed }) => [
-                        styles.tokenActionButton,
-                        !bearerToken && styles.tokenActionButtonDisabled,
-                        pressed && styles.tokenActionButtonPressed,
-                      ]}
-                      onPress={handleCopy}
-                      disabled={!bearerToken}
-                    >
-                      <Text style={styles.tokenActionText}>
-                        {copyFeedback ? "Copied!" : "Copy"}
-                      </Text>
-                    </Pressable>
-                  </View>
+                  {authMethod === "static" ? (
+                    <>
+                      <View style={styles.section}>
+                        <Text style={styles.label}>Client ID *</Text>
+                        <TextInput
+                          style={styles.input}
+                          value={staticClientId}
+                          onChangeText={setStaticClientId}
+                          placeholder="your-client-id"
+                          placeholderTextColor="#AEAEB2"
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                        />
+                      </View>
 
-                  <Text style={styles.hint}>
-                    Sent as{" "}
-                    <Text style={styles.hintMono}>Authorization: Bearer …</Text> on
-                    every request. Newlines are stripped automatically.
-                  </Text>
+                      <View style={styles.section}>
+                        <Text style={styles.label}>Client Secret</Text>
+                        <View style={styles.passwordContainer}>
+                          <TextInput
+                            style={[styles.input, styles.passwordInput]}
+                            value={staticClientSecret}
+                            onChangeText={setStaticClientSecret}
+                            placeholder="Optional for confidential clients"
+                            placeholderTextColor="#AEAEB2"
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                            secureTextEntry={!staticSecretVisible}
+                          />
+                          <Pressable
+                            style={({ pressed }) => [
+                              styles.inlineActionButton,
+                              pressed && styles.inlineActionButtonPressed,
+                            ]}
+                            onPress={() => setStaticSecretVisible((value) => !value)}
+                          >
+                            <Text style={styles.inlineActionText}>
+                              {staticSecretVisible ? "Hide" : "Show"}
+                            </Text>
+                          </Pressable>
+                        </View>
+                        <Text style={styles.hint}>
+                          Leave blank for public clients. Add a secret for confidential clients using `client_secret_post`.
+                        </Text>
+                      </View>
+
+                      <View style={styles.section}>
+                        <Text style={styles.label}>Authorization Endpoint *</Text>
+                        <TextInput
+                          style={styles.input}
+                          value={staticAuthEndpoint}
+                          onChangeText={setStaticAuthEndpoint}
+                          placeholder="https://provider.com/oauth/authorize"
+                          placeholderTextColor="#AEAEB2"
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                          keyboardType="url"
+                        />
+                      </View>
+
+                      <View style={styles.section}>
+                        <Text style={styles.label}>Token Endpoint *</Text>
+                        <TextInput
+                          style={styles.input}
+                          value={staticTokenEndpoint}
+                          onChangeText={setStaticTokenEndpoint}
+                          placeholder="https://provider.com/oauth/token"
+                          placeholderTextColor="#AEAEB2"
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                          keyboardType="url"
+                        />
+                        <Text style={styles.hint}>
+                          Static endpoints are not persisted for display. Re-enter them here when you need to re-authenticate.
+                        </Text>
+                      </View>
+
+                      <View style={styles.section}>
+                        <Text style={styles.label}>Scopes</Text>
+                        <TextInput
+                          style={styles.input}
+                          value={staticScopes}
+                          onChangeText={setStaticScopes}
+                          placeholder="openid, profile, email"
+                          placeholderTextColor="#AEAEB2"
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                        />
+                        <Text style={styles.hint}>
+                          Comma-separated scopes requested during authorization.
+                        </Text>
+                      </View>
+                    </>
+                  ) : (
+                    <>
+                      <Text style={styles.label}>Bearer Token</Text>
+
+                      <View style={styles.tokenInputRow}>
+                        <TextInput
+                          style={[styles.input, styles.tokenInput]}
+                          value={bearerToken}
+                          onChangeText={handleTokenChange}
+                          placeholder="Optional JWT or access token..."
+                          placeholderTextColor="#AEAEB2"
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                          secureTextEntry={!tokenVisible}
+                          multiline={false}
+                        />
+                        <Pressable
+                          style={({ pressed }) => [
+                            styles.tokenIconButton,
+                            pressed && styles.tokenIconButtonPressed,
+                          ]}
+                          onPress={() => setTokenVisible((v) => !v)}
+                        >
+                          <Text style={styles.tokenIconText}>
+                            {tokenVisible ? "🙈" : "👁️"}
+                          </Text>
+                        </Pressable>
+                      </View>
+
+                      <View style={styles.tokenActions}>
+                        <Pressable
+                          style={({ pressed }) => [
+                            styles.tokenActionButton,
+                            pressed && styles.tokenActionButtonPressed,
+                          ]}
+                          onPress={handlePaste}
+                        >
+                          <Text style={styles.tokenActionText}>Paste</Text>
+                        </Pressable>
+                        <Pressable
+                          style={({ pressed }) => [
+                            styles.tokenActionButton,
+                            !bearerToken && styles.tokenActionButtonDisabled,
+                            pressed && styles.tokenActionButtonPressed,
+                          ]}
+                          onPress={handleCopy}
+                          disabled={!bearerToken}
+                        >
+                          <Text style={styles.tokenActionText}>
+                            {copyFeedback ? "Copied!" : "Copy"}
+                          </Text>
+                        </Pressable>
+                      </View>
+
+                      <Text style={styles.hint}>
+                        Sent as{" "}
+                        <Text style={styles.hintMono}>Authorization: Bearer ...</Text> on
+                        every request. Newlines are stripped automatically.
+                      </Text>
+                    </>
+                  )}
                 </View>
               )}
             </>
@@ -559,6 +875,57 @@ const styles = StyleSheet.create({
   },
   advancedSection: {
     marginBottom: 24,
+  },
+  segmentControl: {
+    flexDirection: "row",
+    backgroundColor: "#EAEAEE",
+    borderRadius: 12,
+    padding: 4,
+  },
+  segment: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    alignItems: "center",
+    borderRadius: 10,
+  },
+  segmentActive: {
+    backgroundColor: "#FFFFFF",
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  segmentText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#636366",
+  },
+  segmentTextActive: {
+    color: "#1C1C1E",
+  },
+  passwordContainer: {
+    position: "relative",
+  },
+  passwordInput: {
+    paddingRight: 76,
+  },
+  inlineActionButton: {
+    position: "absolute",
+    right: 10,
+    top: 8,
+    bottom: 8,
+    justifyContent: "center",
+    paddingHorizontal: 10,
+  },
+  inlineActionButtonPressed: {
+    opacity: 0.6,
+  },
+  inlineActionText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#0A84FF",
   },
   tokenInputRow: {
     flexDirection: "row",

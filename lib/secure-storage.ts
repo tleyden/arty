@@ -778,6 +778,7 @@ export interface McpExtensionRecord {
   normalizedName: string;
   serverUrl: string;
   disabled?: boolean;
+  authMode?: "dcr" | "static" | "bearer";
 }
 
 // "My Cool Server!" → "my_cool_server"
@@ -814,8 +815,10 @@ export function uniqueNormalizedName(
 const MCP_EXTENSIONS_KEY = "VIBEMACHINE_MCP_EXTENSIONS";
 const MCP_TOKEN_PREFIX = "VIBEMACHINE_MCP_TOKEN_";
 const MCP_CLIENT_ID_PREFIX = "VIBEMACHINE_MCP_CLIENT_ID_";
+const MCP_CLIENT_SECRET_PREFIX = "VIBEMACHINE_MCP_CLIENT_SECRET_";
 const MCP_REFRESH_TOKEN_PREFIX = "VIBEMACHINE_MCP_REFRESH_TOKEN_";
 const MCP_TOKEN_ENDPOINT_PREFIX = "VIBEMACHINE_MCP_TOKEN_ENDPOINT_";
+const MCP_AUTH_MODE_PREFIX = "VIBEMACHINE_MCP_AUTH_MODE_";
 
 export async function getMcpExtensions(): Promise<McpExtensionRecord[]> {
   try {
@@ -888,6 +891,47 @@ export async function getMcpClientId(id: string): Promise<string | null> {
   }
 }
 
+export async function saveMcpClientSecret(id: string, secret: string): Promise<void> {
+  await setCachedValue(`${MCP_CLIENT_SECRET_PREFIX}${id}`, secret);
+}
+
+export async function getMcpClientSecret(id: string): Promise<string | null> {
+  try {
+    return await getCachedValue(`${MCP_CLIENT_SECRET_PREFIX}${id}`);
+  } catch {
+    return null;
+  }
+}
+
+export async function deleteMcpClientSecret(id: string): Promise<void> {
+  try {
+    await deleteCachedValue(`${MCP_CLIENT_SECRET_PREFIX}${id}`);
+  } catch {
+    // secret may not exist
+  }
+}
+
+export async function saveMcpAuthMode(
+  id: string,
+  mode: "dcr" | "static" | "bearer",
+): Promise<void> {
+  await setCachedValue(`${MCP_AUTH_MODE_PREFIX}${id}`, mode);
+}
+
+export async function getMcpAuthMode(
+  id: string,
+): Promise<"dcr" | "static" | "bearer" | null> {
+  try {
+    const mode = await getCachedValue(`${MCP_AUTH_MODE_PREFIX}${id}`);
+    if (mode === "dcr" || mode === "static" || mode === "bearer") {
+      return mode;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export async function saveMcpRefreshToken(id: string, token: string): Promise<void> {
   await setCachedValue(`${MCP_REFRESH_TOKEN_PREFIX}${id}`, token);
 }
@@ -917,6 +961,8 @@ export async function clearMcpAuthCredentials(id: string): Promise<void> {
     deleteCachedValue(`${MCP_CLIENT_ID_PREFIX}${id}`),
     deleteCachedValue(`${MCP_REFRESH_TOKEN_PREFIX}${id}`),
     deleteCachedValue(`${MCP_TOKEN_ENDPOINT_PREFIX}${id}`),
+    deleteCachedValue(`${MCP_CLIENT_SECRET_PREFIX}${id}`),
+    deleteCachedValue(`${MCP_AUTH_MODE_PREFIX}${id}`),
   ]);
 }
 
@@ -1006,8 +1052,10 @@ export async function clearAllStoredSecrets(): Promise<void> {
     secureStoreKeys.push(
       `${MCP_TOKEN_PREFIX}${ext.id}`,
       `${MCP_CLIENT_ID_PREFIX}${ext.id}`,
+      `${MCP_CLIENT_SECRET_PREFIX}${ext.id}`,
       `${MCP_REFRESH_TOKEN_PREFIX}${ext.id}`,
       `${MCP_TOKEN_ENDPOINT_PREFIX}${ext.id}`,
+      `${MCP_AUTH_MODE_PREFIX}${ext.id}`,
     );
   }
 
