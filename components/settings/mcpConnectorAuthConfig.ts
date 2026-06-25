@@ -32,6 +32,22 @@ type ValidateMcpConnectorFormInput = {
   staticClientId: string;
 };
 
+type SanitizeMcpConnectorFormInput = {
+  name: string;
+  serverUrl: string;
+  bearerToken: string;
+  staticClientId: string;
+  staticClientSecret: string;
+};
+
+export type SanitizedMcpConnectorForm = {
+  name: string;
+  serverUrl: string;
+  bearerToken: string;
+  staticClientId: string;
+  staticClientSecret: string;
+};
+
 export function deriveMcpConnectorAuthState(
   input: DerivedMcpConnectorAuthStateInput,
 ): DerivedMcpConnectorAuthState {
@@ -65,6 +81,18 @@ export function buildStaticOAuthCredentials(
   return {
     clientId: input.clientId.trim(),
     clientSecret: input.clientSecret.trim() || undefined,
+  };
+}
+
+export function sanitizeMcpConnectorForm(
+  input: SanitizeMcpConnectorFormInput,
+): SanitizedMcpConnectorForm {
+  return {
+    name: input.name.trim(),
+    serverUrl: input.serverUrl.trim(),
+    bearerToken: input.bearerToken.trim(),
+    staticClientId: input.staticClientId.trim(),
+    staticClientSecret: input.staticClientSecret.trim(),
   };
 }
 

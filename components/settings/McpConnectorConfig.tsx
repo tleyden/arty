@@ -43,6 +43,7 @@ import { log } from "../../lib/logger";
 import {
   buildStaticOAuthCredentials,
   deriveMcpConnectorAuthState,
+  sanitizeMcpConnectorForm,
   validateMcpConnectorForm,
   type McpConnectorAuthMethod,
   type McpStoredAuthMode,
@@ -186,6 +187,10 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
 
   const persistExtension = async (
     id: string,
+    sanitizedForm: {
+      name: string;
+      serverUrl: string;
+    },
     manualToken?: string,
     options?: {
       preserveExistingToken?: boolean;
@@ -204,12 +209,16 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
       },
     );
     const allExtensions = await getMcpExtensions();
-    const normalizedName = uniqueNormalizedName(toNormalizedName(name), allExtensions, existingExtension?.id);
+    const normalizedName = uniqueNormalizedName(
+      toNormalizedName(sanitizedForm.name),
+      allExtensions,
+      existingExtension?.id,
+    );
     const record: McpExtensionRecord = {
       id,
-      name,
+      name: sanitizedForm.name,
       normalizedName,
-      serverUrl,
+      serverUrl: sanitizedForm.serverUrl,
       authMode: options?.authMode,
     };
     await addMcpExtension(record);
@@ -252,11 +261,18 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
     setIsConnecting(true);
     setConnectingLabel("Connecting…");
     try {
-      const validationError = validateMcpConnectorForm({
+      const sanitizedForm = sanitizeMcpConnectorForm({
         name,
         serverUrl,
-        authMethod,
+        bearerToken,
         staticClientId,
+        staticClientSecret,
+      });
+      const validationError = validateMcpConnectorForm({
+        name: sanitizedForm.name,
+        serverUrl: sanitizedForm.serverUrl,
+        authMethod,
+        staticClientId: sanitizedForm.staticClientId,
       });
       if (validationError) {
         Alert.alert("Missing Field", validationError, [{ text: "OK" }]);
@@ -267,7 +283,11 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
         const id = existingExtension?.id ?? `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
         // Probe the server to discover OAuth endpoints, same as the auto/DCR flow.
-        const probeResult = await probeMcpServer(serverUrl, undefined, name);
+        const probeResult = await probeMcpServer(
+          sanitizedForm.serverUrl,
+          undefined,
+          sanitizedForm.name,
+        );
         if (probeResult.statusCode !== 401 || !probeResult.resourceMetadataUrl) {
           const detail = probeResult.error ?? `Server returned ${probeResult.statusCode}`;
           Alert.alert("Connection Failed", detail, [{ text: "OK" }]);
@@ -276,8 +296,8 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
 
         setConnectingLabel("Opening sign-in…");
         const staticCredentials: StaticOAuthCredentials = buildStaticOAuthCredentials({
-          clientId: staticClientId,
-          clientSecret: staticClientSecret,
+          clientId: sanitizedForm.staticClientId,
+          clientSecret: sanitizedForm.staticClientSecret,
         });
 
         try {
@@ -285,13 +305,13 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
           const oauthResult = await performMcpOAuthFlow(
             id,
             probeResult.resourceMetadataUrl,
-            name,
+            sanitizedForm.name,
             undefined,
             staticCredentials,
           );
           log.info("[mcp_connector] Static OAuth flow returned", {}, { oauthResult_type: oauthResult.type });
           if (oauthResult.type === "success") {
-            await persistExtension(id, undefined, {
+            await persistExtension(id, sanitizedForm, undefined, {
               preserveExistingToken: true,
               authMode: "static",
             });
@@ -312,24 +332,45 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
         return;
       }
 
-      const token = bearerToken.trim() || undefined;
-      const result = await probeMcpServer(serverUrl, token, name);
+      const token = sanitizedForm.bearerToken || undefined;
+      const result = await probeMcpServer(sanitizedForm.serverUrl, token, sanitizedForm.name);
 
       if (result.success) {
         const id = existingExtension?.id ?? `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-        await persistExtension(id, token, { authMode: token ? "bearer" : undefined });
+        await persistExtension(id, sanitizedForm, token, { authMode: token ? "bearer" : undefined });
       } else if (result.statusCode === 401 && result.resourceMetadataUrl) {
         const id = existingExtension?.id ?? `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         setConnectingLabel("Opening sign-in…");
         const allExtensions = await getMcpExtensions();
-        const normalizedName = uniqueNormalizedName(toNormalizedName(name), allExtensions, existingExtension?.id);
-        log.info("[mcp_connector] entering OAuth branch", {}, { id, serverUrl, normalizedName, resourceMetadataUrl: result.resourceMetadataUrl });
+        const normalizedName = uniqueNormalizedName(
+          toNormalizedName(sanitizedForm.name),
+          allExtensions,
+          existingExtension?.id,
+        );
+        log.info(
+          "[mcp_connector] entering OAuth branch",
+          {},
+          {
+            id,
+            serverUrl: sanitizedForm.serverUrl,
+            normalizedName,
+            resourceMetadataUrl: result.resourceMetadataUrl,
+          },
+        );
         try {
           onBeforeBrowserOpen?.();
-          const oauthResult = await performMcpOAuthFlow(id, result.resourceMetadataUrl, name, { serverUrl, normalizedName });
+          const oauthResult = await performMcpOAuthFlow(
+            id,
+            result.resourceMetadataUrl,
+            sanitizedForm.name,
+            {
+              serverUrl: sanitizedForm.serverUrl,
+              normalizedName,
+            },
+          );
           log.info("[mcp_connector] OAuth flow returned", {}, { oauthResult_type: oauthResult.type });
           if (oauthResult.type === "success") {
-            await persistExtension(id, undefined, {
+            await persistExtension(id, sanitizedForm, undefined, {
               preserveExistingToken: true,
               authMode: "dcr",
             });
@@ -370,8 +411,15 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
     setIsConnecting(true);
     setConnectingLabel("Completing sign-in…");
     try {
+      const sanitizedForm = sanitizeMcpConnectorForm({
+        name,
+        serverUrl,
+        bearerToken,
+        staticClientId,
+        staticClientSecret,
+      });
       await completeMcpOAuthFromCallbackUrl(callbackUrl.trim(), pendingOAuth);
-      await persistExtension(pendingExtensionId, undefined, {
+      await persistExtension(pendingExtensionId, sanitizedForm, undefined, {
         preserveExistingToken: true,
         authMode: pendingAuthMode === "static" || pendingAuthMode === "dcr" ? pendingAuthMode : undefined,
       });

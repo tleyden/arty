@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   buildStaticOAuthCredentials,
   deriveMcpConnectorAuthState,
+  sanitizeMcpConnectorForm,
   validateMcpConnectorForm,
 } from "../mcpConnectorAuthConfig";
 
@@ -92,5 +93,25 @@ describe("validateMcpConnectorForm", () => {
         staticClientId: "my-client-id",
       }),
     ).toBeNull();
+  });
+});
+
+describe("sanitizeMcpConnectorForm", () => {
+  test("trims leading and trailing whitespace from connector fields", () => {
+    expect(
+      sanitizeMcpConnectorForm({
+        name: "  Brain3  ",
+        serverUrl: " https://mcp.example.com/path ",
+        bearerToken: "  bearer-token  ",
+        staticClientId: "  client-id  ",
+        staticClientSecret: "  client-secret  ",
+      }),
+    ).toEqual({
+      name: "Brain3",
+      serverUrl: "https://mcp.example.com/path",
+      bearerToken: "bearer-token",
+      staticClientId: "client-id",
+      staticClientSecret: "client-secret",
+    });
   });
 });
