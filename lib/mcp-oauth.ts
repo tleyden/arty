@@ -1,4 +1,5 @@
 import * as AuthSession from "expo-auth-session";
+import * as Crypto from "expo-crypto";
 
 import {
   fetchOAuthServerMetadata,
@@ -11,12 +12,14 @@ import {
   getMcpClientSecret,
   getMcpClientId,
   getMcpRefreshToken,
+  getMcpResource,
   getMcpTokenEndpoint,
   saveMcpAuthMode,
   saveMcpBearerToken,
   saveMcpClientId,
   saveMcpClientSecret,
   saveMcpRefreshToken,
+  saveMcpResource,
   saveMcpTokenEndpoint,
 } from "./secure-storage";
 
@@ -104,6 +107,7 @@ export async function performMcpOAuthFlow(
   }
 
   await saveMcpTokenEndpoint(extensionId, oauthMeta.tokenEndpoint);
+  await saveMcpResource(extensionId, resourceMetadata.resource);
 
   const discovery = {
     authorizationEndpoint: oauthMeta.authorizationEndpoint,
@@ -165,6 +169,7 @@ export async function performMcpOAuthFlow(
       extensionId,
       connectorName,
       clientSecret,
+      resourceMetadata.resource,
     );
     return { type: "success", ...tokens };
   }
@@ -207,7 +212,10 @@ export async function completeMcpOAuthFromCallbackUrl(
     { extension_id: pendingState.extensionId },
   );
 
-  const clientSecret = await getMcpClientSecret(pendingState.extensionId);
+  const [clientSecret, resource] = await Promise.all([
+    getMcpClientSecret(pendingState.extensionId),
+    getMcpResource(pendingState.extensionId),
+  ]);
 
   return exchangeAndStore(
     code,
@@ -218,6 +226,7 @@ export async function completeMcpOAuthFromCallbackUrl(
     pendingState.extensionId,
     undefined,
     clientSecret ?? undefined,
+    resource ?? undefined,
   );
 }
 
@@ -230,6 +239,7 @@ async function exchangeAndStore(
   extensionId: string,
   connectorName?: string,
   clientSecret?: string,
+  resource?: string,
 ): Promise<{ accessToken: string; refreshToken?: string }> {
   const exchangeConfig: any = {
     code,
@@ -239,8 +249,15 @@ async function exchangeAndStore(
   if (clientSecret) {
     exchangeConfig.clientSecret = clientSecret;
   }
+  const extraParams: Record<string, string> = {};
   if (codeVerifier) {
-    exchangeConfig.extraParams = { code_verifier: codeVerifier };
+    extraParams.code_verifier = codeVerifier;
+  }
+  if (resource) {
+    extraParams.resource = resource;
+  }
+  if (Object.keys(extraParams).length > 0) {
+    exchangeConfig.extraParams = extraParams;
   }
   const tokenResponse = await AuthSession.exchangeCodeAsync(
     exchangeConfig,
@@ -281,6 +298,12 @@ export type McpAccessTokenRefreshResult =
   | { type: "success"; accessToken: string }
   | { type: "failure"; userMessage: string; oauthErrorCode?: string };
 
+const sha256Prefix = async (value: string | null | undefined): Promise<string> => {
+  if (!value) return "(none)";
+  const hash = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, value);
+  return hash.slice(0, 8);
+};
+
 const getOAuthRefreshErrorCode = (err: unknown): string | undefined =>
   (err as any)?.code ??
   (err as any)?.error ??
@@ -310,11 +333,12 @@ export async function refreshMcpAccessTokenWithDetails(
   extensionId: string,
   connectorName?: string,
 ): Promise<McpAccessTokenRefreshResult> {
-  const [refreshToken, tokenEndpoint, clientId, clientSecret] = await Promise.all([
+  const [refreshToken, tokenEndpoint, clientId, clientSecret, resource] = await Promise.all([
     getMcpRefreshToken(extensionId),
     getMcpTokenEndpoint(extensionId),
     getMcpClientId(extensionId),
     getMcpClientSecret(extensionId),
+    getMcpResource(extensionId),
   ]);
 
   const missingFields = [
@@ -344,6 +368,11 @@ export async function refreshMcpAccessTokenWithDetails(
     };
   }
 
+  const [clientIdHash, clientSecretHash] = await Promise.all([
+    sha256Prefix(clientId),
+    sha256Prefix(clientSecret),
+  ]);
+
   log.info(
     "[mcp_oauth] Refreshing access token",
     {},
@@ -352,9 +381,12 @@ export async function refreshMcpAccessTokenWithDetails(
       connector_name: connectorName,
       has_client_id: !!clientId,
       client_id: clientId,
+      client_id_hash: clientIdHash,
       has_client_secret: !!clientSecret,
       client_secret_length: clientSecret?.length ?? 0,
+      client_secret_hash: clientSecretHash,
       token_endpoint: tokenEndpoint,
+      resource: resource ?? null,
     },
   );
 
@@ -365,6 +397,9 @@ export async function refreshMcpAccessTokenWithDetails(
     };
     if (clientSecret) {
       refreshConfig.clientSecret = clientSecret;
+    }
+    if (resource) {
+      refreshConfig.extraParams = { resource };
     }
     const tokenResponse = await AuthSession.refreshAsync(
       refreshConfig,
@@ -413,7 +448,9 @@ export async function refreshMcpAccessTokenWithDetails(
         has_refresh_token: !!refreshToken,
         has_client_id: !!clientId,
         client_id: clientId,
+        client_id_hash: clientIdHash,
         has_client_secret: !!clientSecret,
+        client_secret_hash: clientSecretHash,
       },
     );
     return {

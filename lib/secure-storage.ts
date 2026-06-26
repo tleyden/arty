@@ -819,6 +819,7 @@ const MCP_CLIENT_SECRET_PREFIX = "VIBEMACHINE_MCP_CLIENT_SECRET_";
 const MCP_REFRESH_TOKEN_PREFIX = "VIBEMACHINE_MCP_REFRESH_TOKEN_";
 const MCP_TOKEN_ENDPOINT_PREFIX = "VIBEMACHINE_MCP_TOKEN_ENDPOINT_";
 const MCP_AUTH_MODE_PREFIX = "VIBEMACHINE_MCP_AUTH_MODE_";
+const MCP_RESOURCE_PREFIX = "VIBEMACHINE_MCP_RESOURCE_";
 
 export async function getMcpExtensions(): Promise<McpExtensionRecord[]> {
   try {
@@ -956,6 +957,18 @@ export async function getMcpTokenEndpoint(id: string): Promise<string | null> {
   }
 }
 
+export async function saveMcpResource(id: string, resource: string): Promise<void> {
+  await setCachedValue(`${MCP_RESOURCE_PREFIX}${id}`, resource);
+}
+
+export async function getMcpResource(id: string): Promise<string | null> {
+  try {
+    return await getCachedValue(`${MCP_RESOURCE_PREFIX}${id}`);
+  } catch {
+    return null;
+  }
+}
+
 export async function clearMcpAuthCredentials(id: string): Promise<void> {
   await Promise.allSettled([
     deleteCachedValue(`${MCP_CLIENT_ID_PREFIX}${id}`),
@@ -963,6 +976,7 @@ export async function clearMcpAuthCredentials(id: string): Promise<void> {
     deleteCachedValue(`${MCP_TOKEN_ENDPOINT_PREFIX}${id}`),
     deleteCachedValue(`${MCP_CLIENT_SECRET_PREFIX}${id}`),
     deleteCachedValue(`${MCP_AUTH_MODE_PREFIX}${id}`),
+    deleteCachedValue(`${MCP_RESOURCE_PREFIX}${id}`),
   ]);
 }
 
@@ -1056,6 +1070,7 @@ export async function clearAllStoredSecrets(): Promise<void> {
       `${MCP_REFRESH_TOKEN_PREFIX}${ext.id}`,
       `${MCP_TOKEN_ENDPOINT_PREFIX}${ext.id}`,
       `${MCP_AUTH_MODE_PREFIX}${ext.id}`,
+      `${MCP_RESOURCE_PREFIX}${ext.id}`,
     );
   }
 
