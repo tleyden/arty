@@ -288,7 +288,10 @@ export async function refreshMcpAccessToken(
     {
       extension_id: extensionId,
       connector_name: connectorName,
+      has_client_id: !!clientId,
+      client_id_length: clientId?.length ?? 0,
       has_client_secret: !!clientSecret,
+      client_secret_length: clientSecret?.length ?? 0,
     },
   );
 
@@ -313,10 +316,21 @@ export async function refreshMcpAccessToken(
     log.info("[mcp_oauth] Token refresh succeeded", {}, { connector_name: connectorName });
     return tokenResponse.accessToken;
   } catch (err) {
+    const oauthCode =
+      (err as any)?.code ??
+      (err as any)?.error ??
+      (typeof (err as any)?.message === "string"
+        ? (err as any).message.match(/\b(invalid_\w+|unauthorized_client|access_denied)\b/)?.[0]
+        : undefined) ??
+      undefined;
     log.warn(
       "[mcp_oauth] Token refresh failed",
       {},
-      { connector_name: connectorName, error: err instanceof Error ? err.message : String(err) },
+      {
+        connector_name: connectorName,
+        error: err instanceof Error ? err.message : String(err),
+        oauth_error_code: oauthCode,
+      },
     );
     return null;
   }

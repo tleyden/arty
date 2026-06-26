@@ -301,6 +301,7 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
         });
 
         try {
+          log.info("[mcp_connector] Calling onBeforeBrowserOpen (static) — parent screen will be hidden", {}, { id });
           onBeforeBrowserOpen?.();
           const oauthResult = await performMcpOAuthFlow(
             id,
@@ -311,6 +312,7 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
           );
           log.info("[mcp_connector] Static OAuth flow returned", {}, { oauthResult_type: oauthResult.type });
           if (oauthResult.type === "success") {
+            log.info("[mcp_connector] Static OAuth success — no re-open of parent screen on success path", {}, { id });
             await persistExtension(id, sanitizedForm, undefined, {
               preserveExistingToken: true,
               authMode: "static",
@@ -358,6 +360,7 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
           },
         );
         try {
+          log.info("[mcp_connector] Calling onBeforeBrowserOpen (dcr) — parent screen will be hidden", {}, { id });
           onBeforeBrowserOpen?.();
           const oauthResult = await performMcpOAuthFlow(
             id,
@@ -370,6 +373,7 @@ export const McpConnectorConfig: React.FC<McpConnectorConfigProps> = ({
           );
           log.info("[mcp_connector] OAuth flow returned", {}, { oauthResult_type: oauthResult.type });
           if (oauthResult.type === "success") {
+            log.info("[mcp_connector] DCR OAuth success — no re-open of parent screen on success path", {}, { id });
             await persistExtension(id, sanitizedForm, undefined, {
               preserveExistingToken: true,
               authMode: "dcr",

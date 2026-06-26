@@ -771,8 +771,18 @@ async function registerUserExtensionToolsFromCache(
             return { result: JSON.stringify(result, null, 2), updatedToolSessionContext: {} };
           } catch (retryError) {
             if (!(retryError instanceof McpAuthError)) throw retryError;
+            log.warn(
+              "[ToolkitManager] Retry with refreshed token still got 401",
+              {},
+              { name: ext.name, toolName },
+            );
           }
         }
+        log.warn(
+          "[ToolkitManager] Emitting MCP_REAUTH_REQUIRED_EVENT from tool-call path",
+          {},
+          { name: ext.name, toolName, had_new_token: !!newToken },
+        );
         DeviceEventEmitter.emit(MCP_REAUTH_REQUIRED_EVENT, { id: ext.id, name: ext.name });
         throw new Error(`${ext.name} needs to sign in again. Open Extensions (MCP) to re-authenticate.`);
       }

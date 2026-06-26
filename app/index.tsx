@@ -765,6 +765,7 @@ export default function Index() {
         visible={mcpExtensionsVisible}
         onClose={() => setMcpExtensionsVisible(false)}
         onBeforeBrowserOpen={() => {
+          log.info("[index] onBeforeBrowserOpen: hiding McpExtensionsScreen before OAuth — will NOT auto-reopen on success");
           setMcpExtensionsVisible(false);
           setMenuVisible(false);
         }}

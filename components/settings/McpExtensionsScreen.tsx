@@ -16,6 +16,7 @@ import {
   type McpExtensionRecord,
 } from "../../lib/secure-storage";
 import { MCP_REAUTH_REQUIRED_EVENT } from "../../modules/vm-webrtc/src/ToolkitManager";
+import { log } from "../../lib/logger";
 import { McpConnectorConfig } from "./McpConnectorConfig";
 import { McpExtensionDetailScreen } from "./McpExtensionDetailScreen";
 
@@ -53,15 +54,28 @@ export const McpExtensionsScreen: React.FC<McpExtensionsScreenProps> = ({
     const sub = DeviceEventEmitter.addListener(
       MCP_REAUTH_REQUIRED_EVENT,
       ({ id, name }: { id: string; name: string }) => {
+        log.info("[McpExtensionsScreen] MCP_REAUTH_REQUIRED_EVENT received", {}, { id, name });
         const ext = extensionsRef.current.find((e) => e.id === id);
+        log.info(
+          "[McpExtensionsScreen] Showing reauth alert",
+          {},
+          { id, name, ext_found_in_ref: !!ext, ref_length: extensionsRef.current.length },
+        );
         Alert.alert(
           `"${name}" needs to sign in again`,
           "Your session has expired.",
           [
-            { text: "Later", style: "cancel" },
+            {
+              text: "Later",
+              style: "cancel",
+              onPress: () => log.info("[McpExtensionsScreen] Reauth alert dismissed (Later)", {}, { id, name }),
+            },
             {
               text: "Re-authenticate",
-              onPress: () => setReauthExtension(ext ?? { id, name, normalizedName: "", serverUrl: "" }),
+              onPress: () => {
+                log.info("[McpExtensionsScreen] Reauth alert accepted, opening re-auth flow", {}, { id, name });
+                setReauthExtension(ext ?? { id, name, normalizedName: "", serverUrl: "" });
+              },
             },
           ],
         );
