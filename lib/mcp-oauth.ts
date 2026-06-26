@@ -395,11 +395,18 @@ export async function refreshMcpAccessTokenWithDetails(
       clientId,
       refreshToken,
     };
+    // Use client_secret_post (credentials in body) not client_secret_basic (Authorization header).
+    // expo-auth-session switches to Basic auth when clientSecret is set directly, but
+    // brain3-dev only accepts client_secret_post.
+    const extraParams: Record<string, string> = {};
     if (clientSecret) {
-      refreshConfig.clientSecret = clientSecret;
+      extraParams.client_secret = clientSecret;
     }
     if (resource) {
-      refreshConfig.extraParams = { resource };
+      extraParams.resource = resource;
+    }
+    if (Object.keys(extraParams).length > 0) {
+      refreshConfig.extraParams = extraParams;
     }
     const tokenResponse = await AuthSession.refreshAsync(
       refreshConfig,
