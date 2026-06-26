@@ -1,0 +1,6 @@
+[mcp_servers.arty-build-eas]
+command = "bun"
+args = [
+    "run",
+    "mcp-server/index.ts",
+]
