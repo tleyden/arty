@@ -27,6 +27,7 @@ import {
   getMcpBearerToken,
   type McpExtensionRecord,
 } from "../../lib/secure-storage";
+import { refreshMcpAccessToken } from "../../lib/mcp-oauth";
 import { CONNECTOR_SETTINGS_CHANGED_EVENT } from "../../modules/vm-webrtc/src/ToolkitManager";
 import { McpConnectorConfig } from "./McpConnectorConfig";
 
@@ -52,6 +53,7 @@ export const McpExtensionDetailScreen: React.FC<McpExtensionDetailScreenProps> =
   const [toolsError, setToolsError] = useState<string | null>(null);
   const [configureVisible, setConfigureVisible] = useState(false);
   const [urlCopied, setUrlCopied] = useState(false);
+  const [refreshingAccessToken, setRefreshingAccessToken] = useState(false);
 
   useEffect(() => {
     setCurrentExtension(extension);
@@ -159,6 +161,35 @@ export const McpExtensionDetailScreen: React.FC<McpExtensionDetailScreenProps> =
           { text: "Reset Auth", style: "destructive", onPress: doReset },
         ]
       );
+    }
+  };
+
+  const handleRefreshAccessToken = async () => {
+    if (refreshingAccessToken) return;
+
+    setRefreshingAccessToken(true);
+    try {
+      const token = await refreshMcpAccessToken(currentExtension.id, currentExtension.name);
+      if (!token) {
+        Alert.alert(
+          "Refresh Failed",
+          "Could not refresh the access token. Check that this extension has a saved refresh token and client credentials, or re-authenticate.",
+          [{ text: "OK" }]
+        );
+        return;
+      }
+
+      DeviceEventEmitter.emit(CONNECTOR_SETTINGS_CHANGED_EVENT);
+      fetchTools();
+      Alert.alert("Access Token Refreshed", "A new access token was saved.", [{ text: "OK" }]);
+    } catch (err) {
+      Alert.alert(
+        "Refresh Failed",
+        err instanceof Error ? err.message : String(err),
+        [{ text: "OK" }]
+      );
+    } finally {
+      setRefreshingAccessToken(false);
     }
   };
 
@@ -339,6 +370,21 @@ export const McpExtensionDetailScreen: React.FC<McpExtensionDetailScreenProps> =
             onPress={handleResetAccessToken}
           >
             <Text style={styles.resetAccessTokenButtonText}>Reset Access Token</Text>
+          </Pressable>
+          <Pressable
+            disabled={refreshingAccessToken}
+            style={({ pressed }) => [
+              styles.refreshAccessTokenButton,
+              pressed && styles.refreshAccessTokenButtonPressed,
+              refreshingAccessToken && styles.refreshAccessTokenButtonDisabled,
+            ]}
+            onPress={handleRefreshAccessToken}
+          >
+            {refreshingAccessToken ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Text style={styles.refreshAccessTokenButtonText}>Refresh Access Token</Text>
+            )}
           </Pressable>
         </View>
       </SafeAreaView>
@@ -624,5 +670,22 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: "#0A84FF",
+  },
+  refreshAccessTokenButton: {
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: "center",
+    backgroundColor: "#0A84FF",
+  },
+  refreshAccessTokenButtonPressed: {
+    backgroundColor: "#006EDB",
+  },
+  refreshAccessTokenButtonDisabled: {
+    opacity: 0.65,
+  },
+  refreshAccessTokenButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#FFFFFF",
   },
 });
