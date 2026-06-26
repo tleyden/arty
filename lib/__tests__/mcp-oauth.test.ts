@@ -31,6 +31,7 @@ const authState = {
   lastAuthRequestConfig: null as Record<string, unknown> | null,
   exchangeCalls: [] as Record<string, unknown>[],
   refreshCalls: [] as Record<string, unknown>[],
+  refreshError: null as Error | null,
 };
 
 const extensionState = {
@@ -44,6 +45,12 @@ const extensionState = {
     registrationEndpoint: "https://auth.example.com/register",
   },
   registeredClientId: "registered-client-id",
+};
+
+const logState = {
+  info: [] as unknown[][],
+  warn: [] as unknown[][],
+  error: [] as unknown[][],
 };
 
 mock.module("../secure-storage", () => ({
@@ -75,9 +82,15 @@ mock.module("../secure-storage", () => ({
 
 mock.module("../logger", () => ({
   log: {
-    info: () => {},
-    warn: () => {},
-    error: () => {},
+    info: (...args: unknown[]) => {
+      logState.info.push(args);
+    },
+    warn: (...args: unknown[]) => {
+      logState.warn.push(args);
+    },
+    error: (...args: unknown[]) => {
+      logState.error.push(args);
+    },
   },
 }));
 
@@ -113,6 +126,9 @@ mock.module("expo-auth-session", () => ({
   },
   refreshAsync: async (config: Record<string, unknown>, discovery: Record<string, unknown>) => {
     authState.refreshCalls.push({ ...config, ...discovery });
+    if (authState.refreshError) {
+      throw authState.refreshError;
+    }
     return authState.refreshResponse;
   },
 }));
@@ -143,6 +159,10 @@ beforeEach(() => {
   authState.lastAuthRequestConfig = null;
   authState.exchangeCalls = [];
   authState.refreshCalls = [];
+  authState.refreshError = null;
+  logState.info = [];
+  logState.warn = [];
+  logState.error = [];
 });
 
 describe("performMcpOAuthFlow", () => {
@@ -232,5 +252,72 @@ describe("refreshMcpAccessToken", () => {
       refreshToken: "stored-refresh-token",
       tokenEndpoint: "https://provider.example.com/token",
     });
+  });
+
+  test("returns user-facing details and logs missing refresh prerequisites", async () => {
+    secureState.clientId = "static-client-id";
+    secureState.refreshToken = null;
+    secureState.tokenEndpoint = "https://provider.example.com/token";
+
+    const result = await oauthModule.refreshMcpAccessTokenWithDetails(
+      "extension-4",
+      "Static Connector",
+    );
+
+    expect(result).toEqual({
+      type: "failure",
+      userMessage: "Missing saved refresh token. Re-authenticate this connector, then try again.",
+      oauthErrorCode: undefined,
+    });
+    expect(logState.warn[0]).toEqual([
+      "[mcp_oauth] Cannot refresh access token because stored OAuth refresh prerequisites are missing",
+      {},
+      {
+        extension_id: "extension-4",
+        connector_name: "Static Connector",
+        missing_fields: ["refresh_token"],
+        has_refresh_token: false,
+        has_token_endpoint: true,
+        has_client_id: true,
+        has_client_secret: false,
+      },
+    ]);
+  });
+
+  test("returns user-facing details and logs OAuth provider refresh failures", async () => {
+    secureState.clientId = "static-client-id";
+    secureState.clientSecret = "stored-static-secret";
+    secureState.refreshToken = "stored-refresh-token";
+    secureState.tokenEndpoint = "https://provider.example.com/token";
+    authState.refreshError = Object.assign(new Error("invalid_grant: refresh token expired"), {
+      code: "invalid_grant",
+    });
+
+    const result = await oauthModule.refreshMcpAccessTokenWithDetails(
+      "extension-5",
+      "Static Connector",
+    );
+
+    expect(result).toEqual({
+      type: "failure",
+      userMessage:
+        "The OAuth provider rejected the refresh request (invalid_grant). Re-authenticate this connector, then try again.",
+      oauthErrorCode: "invalid_grant",
+    });
+    expect(logState.warn[0]).toEqual([
+      "[mcp_oauth] Token refresh failed",
+      {},
+      expect.objectContaining({
+        extension_id: "extension-5",
+        connector_name: "Static Connector",
+        error_message: "invalid_grant: refresh token expired",
+        oauth_error_code: "invalid_grant",
+        token_endpoint: "https://provider.example.com/token",
+        has_refresh_token: true,
+        has_client_id: true,
+        client_id: "static-client-id",
+        has_client_secret: true,
+      }),
+    ]);
   });
 });

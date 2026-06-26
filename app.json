@@ -3,7 +3,7 @@
     "owner": "tleyden",
     "name": "vibemachine",
     "slug": "vibemachine",
-    "version": "1.0.0",
+    "version": "0.3.3",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "vibemachine",
@@ -78,7 +78,7 @@
         "projectId": "f3a6322c-ba58-4e74-902e-89a4d9fccb52"
       }
     },
-    "runtimeVersion": "1.0.0",
+    "runtimeVersion": "0.3.3",
     "updates": {
       "url": "https://u.expo.dev/f3a6322c-ba58-4e74-902e-89a4d9fccb52"
     }

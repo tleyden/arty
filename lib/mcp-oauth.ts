@@ -273,6 +273,43 @@ export async function refreshMcpAccessToken(
   extensionId: string,
   connectorName?: string,
 ): Promise<string | null> {
+  const result = await refreshMcpAccessTokenWithDetails(extensionId, connectorName);
+  return result.type === "success" ? result.accessToken : null;
+}
+
+export type McpAccessTokenRefreshResult =
+  | { type: "success"; accessToken: string }
+  | { type: "failure"; userMessage: string; oauthErrorCode?: string };
+
+const getOAuthRefreshErrorCode = (err: unknown): string | undefined =>
+  (err as any)?.code ??
+  (err as any)?.error ??
+  (typeof (err as any)?.message === "string"
+    ? (err as any).message.match(/\b(invalid_\w+|unauthorized_client|access_denied)\b/)?.[0]
+    : undefined) ??
+  undefined;
+
+const buildMissingRefreshPrerequisiteMessage = (missingFields: string[]): string => {
+  if (missingFields.length === 1) {
+    const missingField = missingFields[0];
+    if (missingField === "refresh_token") {
+      return "Missing saved refresh token. Re-authenticate this connector, then try again.";
+    }
+    if (missingField === "token_endpoint") {
+      return "Missing saved token endpoint. Re-authenticate this connector, then try again.";
+    }
+    if (missingField === "client_id") {
+      return "Missing saved client ID. Re-authenticate this connector, then try again.";
+    }
+  }
+
+  return `Missing saved OAuth refresh credentials (${missingFields.join(", ")}). Re-authenticate this connector, then try again.`;
+};
+
+export async function refreshMcpAccessTokenWithDetails(
+  extensionId: string,
+  connectorName?: string,
+): Promise<McpAccessTokenRefreshResult> {
   const [refreshToken, tokenEndpoint, clientId, clientSecret] = await Promise.all([
     getMcpRefreshToken(extensionId),
     getMcpTokenEndpoint(extensionId),
@@ -280,7 +317,32 @@ export async function refreshMcpAccessToken(
     getMcpClientSecret(extensionId),
   ]);
 
-  if (!refreshToken || !tokenEndpoint || !clientId) return null;
+  const missingFields = [
+    !refreshToken ? "refresh_token" : null,
+    !tokenEndpoint ? "token_endpoint" : null,
+    !clientId ? "client_id" : null,
+  ].filter((field): field is string => !!field);
+
+  if (!refreshToken || !tokenEndpoint || !clientId) {
+    log.warn(
+      "[mcp_oauth] Cannot refresh access token because stored OAuth refresh prerequisites are missing",
+      {},
+      {
+        extension_id: extensionId,
+        connector_name: connectorName,
+        missing_fields: missingFields,
+        has_refresh_token: !!refreshToken,
+        has_token_endpoint: !!tokenEndpoint,
+        has_client_id: !!clientId,
+        has_client_secret: !!clientSecret,
+      },
+    );
+    return {
+      type: "failure",
+      userMessage: buildMissingRefreshPrerequisiteMessage(missingFields),
+      oauthErrorCode: undefined,
+    };
+  }
 
   log.info(
     "[mcp_oauth] Refreshing access token",
@@ -289,9 +351,10 @@ export async function refreshMcpAccessToken(
       extension_id: extensionId,
       connector_name: connectorName,
       has_client_id: !!clientId,
-      client_id_length: clientId?.length ?? 0,
+      client_id: clientId,
       has_client_secret: !!clientSecret,
       client_secret_length: clientSecret?.length ?? 0,
+      token_endpoint: tokenEndpoint,
     },
   );
 
@@ -308,30 +371,57 @@ export async function refreshMcpAccessToken(
       { tokenEndpoint },
     );
 
+    if (!tokenResponse.accessToken) {
+      log.error(
+        "[mcp_oauth] Token refresh response did not include an access token",
+        {},
+        {
+          extension_id: extensionId,
+          connector_name: connectorName,
+          token_endpoint: tokenEndpoint,
+          response_keys: Object.keys(tokenResponse),
+        },
+      );
+      return {
+        type: "failure",
+        userMessage:
+          "The OAuth provider refresh response did not include an access token. Re-authenticate this connector, then try again.",
+      };
+    }
+
     await saveMcpBearerToken(extensionId, tokenResponse.accessToken);
     if (tokenResponse.refreshToken) {
       await saveMcpRefreshToken(extensionId, tokenResponse.refreshToken);
     }
 
     log.info("[mcp_oauth] Token refresh succeeded", {}, { connector_name: connectorName });
-    return tokenResponse.accessToken;
+    return { type: "success", accessToken: tokenResponse.accessToken };
   } catch (err) {
-    const oauthCode =
-      (err as any)?.code ??
-      (err as any)?.error ??
-      (typeof (err as any)?.message === "string"
-        ? (err as any).message.match(/\b(invalid_\w+|unauthorized_client|access_denied)\b/)?.[0]
-        : undefined) ??
-      undefined;
+    const oauthCode = getOAuthRefreshErrorCode(err);
+    const errorMessage = err instanceof Error ? err.message : String(err);
     log.warn(
       "[mcp_oauth] Token refresh failed",
       {},
       {
+        extension_id: extensionId,
         connector_name: connectorName,
-        error: err instanceof Error ? err.message : String(err),
+        error_name: err instanceof Error ? err.name : undefined,
+        error_message: errorMessage,
+        error_stack: err instanceof Error ? err.stack : undefined,
         oauth_error_code: oauthCode,
+        token_endpoint: tokenEndpoint,
+        has_refresh_token: !!refreshToken,
+        has_client_id: !!clientId,
+        client_id: clientId,
+        has_client_secret: !!clientSecret,
       },
     );
-    return null;
+    return {
+      type: "failure",
+      userMessage: oauthCode
+        ? `The OAuth provider rejected the refresh request (${oauthCode}). Re-authenticate this connector, then try again.`
+        : `Could not refresh the access token: ${errorMessage}`,
+      oauthErrorCode: oauthCode,
+    };
   }
 }

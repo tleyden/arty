@@ -27,7 +27,8 @@ import {
   getMcpBearerToken,
   type McpExtensionRecord,
 } from "../../lib/secure-storage";
-import { refreshMcpAccessToken } from "../../lib/mcp-oauth";
+import { refreshMcpAccessTokenWithDetails } from "../../lib/mcp-oauth";
+import { log } from "../../lib/logger";
 import { CONNECTOR_SETTINGS_CHANGED_EVENT } from "../../modules/vm-webrtc/src/ToolkitManager";
 import { McpConnectorConfig } from "./McpConnectorConfig";
 
@@ -169,13 +170,32 @@ export const McpExtensionDetailScreen: React.FC<McpExtensionDetailScreenProps> =
 
     setRefreshingAccessToken(true);
     try {
-      const token = await refreshMcpAccessToken(currentExtension.id, currentExtension.name);
-      if (!token) {
-        Alert.alert(
-          "Refresh Failed",
-          "Could not refresh the access token. Check that this extension has a saved refresh token and client credentials, or re-authenticate.",
-          [{ text: "OK" }]
+      log.info(
+        "[mcp_detail] Manual access token refresh requested",
+        {},
+        {
+          extension_id: currentExtension.id,
+          extension_name: currentExtension.name,
+          server_url: currentExtension.serverUrl,
+        }
+      );
+
+      const result = await refreshMcpAccessTokenWithDetails(
+        currentExtension.id,
+        currentExtension.name
+      );
+      if (result.type === "failure") {
+        log.warn(
+          "[mcp_detail] Manual access token refresh failed",
+          {},
+          {
+            extension_id: currentExtension.id,
+            extension_name: currentExtension.name,
+            user_message: result.userMessage,
+            oauth_error_code: result.oauthErrorCode,
+          }
         );
+        Alert.alert("Refresh Failed", result.userMessage, [{ text: "OK" }]);
         return;
       }
 
@@ -183,9 +203,21 @@ export const McpExtensionDetailScreen: React.FC<McpExtensionDetailScreenProps> =
       fetchTools();
       Alert.alert("Access Token Refreshed", "A new access token was saved.", [{ text: "OK" }]);
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      log.error(
+        "[mcp_detail] Manual access token refresh threw unexpected error",
+        {},
+        {
+          extension_id: currentExtension.id,
+          extension_name: currentExtension.name,
+          error_name: err instanceof Error ? err.name : undefined,
+          error_message: message,
+          error_stack: err instanceof Error ? err.stack : undefined,
+        }
+      );
       Alert.alert(
         "Refresh Failed",
-        err instanceof Error ? err.message : String(err),
+        `Could not refresh the access token: ${message}`,
         [{ text: "OK" }]
       );
     } finally {
