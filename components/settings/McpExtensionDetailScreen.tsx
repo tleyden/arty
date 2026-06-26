@@ -162,6 +162,38 @@ export const McpExtensionDetailScreen: React.FC<McpExtensionDetailScreenProps> =
     }
   };
 
+  const handleResetAccessToken = () => {
+    const doReset = async () => {
+      await deleteMcpBearerToken(currentExtension.id);
+      DeviceEventEmitter.emit(CONNECTOR_SETTINGS_CHANGED_EVENT);
+    };
+
+    if (Platform.OS === "ios") {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          title: `Reset access token for "${currentExtension.name}"?`,
+          message:
+            "The access token will be dropped. The app will use the refresh token on the next MCP call.",
+          options: ["Cancel", "Reset Access Token"],
+          destructiveButtonIndex: 1,
+          cancelButtonIndex: 0,
+        },
+        (buttonIndex) => {
+          if (buttonIndex === 1) doReset();
+        }
+      );
+    } else {
+      Alert.alert(
+        "Reset Access Token",
+        `Drop the access token for "${currentExtension.name}"? The app will use the refresh token on the next MCP call.`,
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Reset Access Token", style: "destructive", onPress: doReset },
+        ]
+      );
+    }
+  };
+
   return (
     <Modal
       animationType="slide"
@@ -270,23 +302,43 @@ export const McpExtensionDetailScreen: React.FC<McpExtensionDetailScreenProps> =
         </ScrollView>
 
         <View style={[styles.footer, { paddingBottom: insets.bottom + 16 }]}>
+          <View style={styles.footerPrimaryActions}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.configureButton,
+                pressed && styles.configureButtonPressed,
+              ]}
+              onPress={() => setConfigureVisible(true)}
+            >
+              <Text style={styles.configureButtonText}>Configure</Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [
+                styles.resetAuthButton,
+                pressed && styles.resetAuthButtonPressed,
+              ]}
+              onPress={handleResetAuth}
+            >
+              <Text style={styles.resetAuthButtonText}>Reset Auth</Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [
+                styles.removeButton,
+                pressed && styles.removeButtonPressed,
+              ]}
+              onPress={handleRemove}
+            >
+              <Text style={styles.removeButtonText}>Remove</Text>
+            </Pressable>
+          </View>
           <Pressable
-            style={({ pressed }) => [styles.configureButton, pressed && styles.configureButtonPressed]}
-            onPress={() => setConfigureVisible(true)}
+            style={({ pressed }) => [
+              styles.resetAccessTokenButton,
+              pressed && styles.resetAccessTokenButtonPressed,
+            ]}
+            onPress={handleResetAccessToken}
           >
-            <Text style={styles.configureButtonText}>Configure</Text>
-          </Pressable>
-          <Pressable
-            style={({ pressed }) => [styles.resetAuthButton, pressed && styles.resetAuthButtonPressed]}
-            onPress={handleResetAuth}
-          >
-            <Text style={styles.resetAuthButtonText}>Reset Auth</Text>
-          </Pressable>
-          <Pressable
-            style={({ pressed }) => [styles.removeButton, pressed && styles.removeButtonPressed]}
-            onPress={handleRemove}
-          >
-            <Text style={styles.removeButtonText}>Remove</Text>
+            <Text style={styles.resetAccessTokenButtonText}>Reset Access Token</Text>
           </Pressable>
         </View>
       </SafeAreaView>
@@ -497,13 +549,16 @@ const styles = StyleSheet.create({
     lineHeight: 17,
   },
   footer: {
-    flexDirection: "row",
     gap: 12,
     paddingHorizontal: 20,
     paddingTop: 16,
     borderTopWidth: 1,
     borderTopColor: "#E5E5EA",
     backgroundColor: "#F5F5F7",
+  },
+  footerPrimaryActions: {
+    flexDirection: "row",
+    gap: 12,
   },
   configureButton: {
     flex: 1,
@@ -553,5 +608,21 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: "#FF3B30",
+  },
+  resetAccessTokenButton: {
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#0A84FF",
+  },
+  resetAccessTokenButtonPressed: {
+    backgroundColor: "#F0F6FF",
+  },
+  resetAccessTokenButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#0A84FF",
   },
 });
