@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const STORAGE_KEY = "@vibemachine/realtimeModelPreference";
 
-export type RealtimeModel = "gpt-realtime" | "gpt-realtime-2";
+export type RealtimeModel = "gpt-realtime" | "gpt-realtime-2" | "gpt-realtime-2.1";
 
 export type RealtimeModelOption = {
   value: RealtimeModel;
@@ -23,10 +23,17 @@ export const REALTIME_MODEL_OPTIONS: RealtimeModelOption[] = [
     title: "GPT Realtime 2",
     description: "Model ID: gpt-realtime-2. Default voice model option.",
   },
+  {
+    value: "gpt-realtime-2.1",
+    title: "GPT Realtime 2.1",
+    description: "Model ID: gpt-realtime-2.1. Adds reasoning to speech-to-speech.",
+  },
 ];
 
 const isRealtimeModel = (value: string): value is RealtimeModel =>
-  value === "gpt-realtime" || value === "gpt-realtime-2";
+  value === "gpt-realtime" ||
+  value === "gpt-realtime-2" ||
+  value === "gpt-realtime-2.1";
 
 export const loadRealtimeModelPreference = async (): Promise<RealtimeModel> => {
   try {
