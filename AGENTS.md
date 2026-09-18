@@ -6,6 +6,7 @@
 - Certain swift objects like AVAudioPlayerDelegate should have serialized access when called from multiple threads. Consider protecting shared state with a serial DispatchQueue or ensuring all method calls dispatch to the main queue.
 - Prefer convention over configuration, this keeps things light, de-coupled, and avoids needless boilerplate.
 - In logfire, the project is using the old name: vibemachine
+- This project uses bun as the package manager and script runner. Use `bun install`, `bun run <script>`, and `bunx <tool>` (e.g. `bunx eas ...`) instead of npm/npx/yarn.
 
 Always use expo libraries, for example:
 
