@@ -72,7 +72,7 @@ async function patchHeaders(): Promise<number> {
   }
 }
 
-async function findMostRecentIpa(): Promise<{ filePath: string; size: number; mtime: Date } | null> {
+async function findMostRecentIpa(modifiedSince = 0): Promise<{ filePath: string; size: number; mtime: Date } | null> {
   let mostRecent: { filePath: string; size: number; mtime: Date } | null = null;
 
   async function searchDir(dir: string, depth: number): Promise<void> {
@@ -88,6 +88,7 @@ async function findMostRecentIpa(): Promise<{ filePath: string; size: number; mt
       const fullPath = path.join(dir, entry.name);
       if (entry.isFile() && entry.name.endsWith('.ipa')) {
         const stat = await fs.stat(fullPath);
+        if (stat.mtimeMs < modifiedSince) continue;
         if (!mostRecent || stat.mtime > mostRecent.mtime) {
           mostRecent = { filePath: fullPath, size: stat.size, mtime: stat.mtime };
         }
@@ -101,6 +102,52 @@ async function findMostRecentIpa(): Promise<{ filePath: string; size: number; mt
   return mostRecent;
 }
 
+async function confirm(question: string, defaultYes = false): Promise<boolean> {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    // EOF is a declined prompt, even when an explicit blank answer means yes.
+    const closed = new Promise<null>((resolve) => rl.once('close', () => resolve(null)));
+    const answer = await Promise.race([rl.question(`\n${question} `), closed]);
+    if (answer === null) return false;
+    const normalized = answer.trim().toLowerCase();
+    return normalized === 'y' || normalized === 'yes' || (defaultYes && normalized === '');
+  } finally {
+    rl.close();
+  }
+}
+
+export function isExpiredIosCredentialsError(output: string): boolean {
+  const plainOutput = Bun.stripANSI(output).replace(/\s+/g, ' ');
+  return /Provisioning Profile has expired/i.test(plainOutput) || (
+    /Failed to set up credentials/i.test(plainOutput) &&
+    /ASC API key is required in non-interactive mode/i.test(plainOutput)
+  );
+}
+
+async function runEasBuild(profile: string, extraFlags: string[] = []): Promise<number> {
+  const command = ['bunx', 'eas', 'build', '--platform', 'ios', '--profile', profile];
+  const result = await executeCommand([...command, '--non-interactive', ...extraFlags], {
+    captureOutput: true,
+  });
+  if (result.exitCode === 0 || result.interrupted || !isExpiredIosCredentialsError(result.output)) {
+    return result.exitCode;
+  }
+
+  console.log('\n❌ Your iOS signing credentials have expired or need to be refreshed.');
+  if (!await confirm('Do you want to refresh them now? (y/N)')) {
+    return result.exitCode;
+  }
+
+  // EAS owns the credential prompts. Inherit its terminal output and retry only once.
+  return executeCommand([...command, ...extraFlags]);
+}
+
+function printIpaDetails(ipa: { filePath: string; size: number; mtime: Date }): void {
+  console.log(`   Path:     ${ipa.filePath}`);
+  console.log(`   Size:     ${(ipa.size / (1024 * 1024)).toFixed(1)} MB`);
+  console.log(`   Modified: ${ipa.mtime.toLocaleString()}`);
+}
+
 async function easSubmitLocalIpa(): Promise<number> {
   console.log('\n🔍 Searching for IPA files...');
 
@@ -111,34 +158,83 @@ async function easSubmitLocalIpa(): Promise<number> {
     return 1;
   }
 
-  const sizeMb = (ipa.size / (1024 * 1024)).toFixed(1);
-
   console.log('\n📦 Most recent IPA found:');
-  console.log(`   Path:     ${ipa.filePath}`);
-  console.log(`   Size:     ${sizeMb} MB`);
-  console.log(`   Modified: ${ipa.mtime.toLocaleString()}`);
+  printIpaDetails(ipa);
 
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  const answer = await rl.question('\nSubmit this IPA to the App Store? (y/N): ');
-  rl.close();
-
-  if (answer.trim().toLowerCase() !== 'y') {
+  if (!await confirm('Submit this IPA to TestFlight / App Store? (y/N)')) {
     console.log('\nCancelled.');
-    process.exit(0);
+    return 0;
   }
 
-  return executeCommand(`eas submit --platform ios --path "${ipa.filePath}"`);
+  return executeCommand(['bunx', 'eas', 'submit', '--platform', 'ios', '--path', ipa.filePath]);
+}
+
+async function easBuildProd(): Promise<number> {
+  const buildExitCode = await runEasBuild('production');
+  if (buildExitCode !== 0) return buildExitCode;
+  return executeCommand(['bunx', 'eas', 'submit', '--platform', 'ios']);
 }
 
 async function easBuildProdLocal(): Promise<number> {
-  const buildExitCode = await executeCommand(
-    "eas build --platform ios --profile production --non-interactive --local"
-  );
+  const buildExitCode = await runEasBuild('production', ['--local']);
   if (buildExitCode !== 0) {
     return buildExitCode;
   }
-  console.log('\n✅ Local production build complete. Proceeding to submission...');
+  console.log('\n✅ Local production build complete. Proceeding to TestFlight / App Store submission...');
   return easSubmitLocalIpa();
+}
+
+async function easBuildDev(): Promise<number> {
+  const buildExitCode = await runEasBuild('dev_self_contained');
+  if (buildExitCode !== 0) return buildExitCode;
+  console.log('\n📲 Install on your iPhone with Expo Orbit:');
+  console.log('   Open the EAS build page linked above and choose "Open with Orbit".');
+  console.log('   Plug in and unlock your iPhone, enable Developer Mode, and select it in Orbit.');
+  return 0;
+}
+
+async function easBuildDevLocal(): Promise<number> {
+  const startedAt = Date.now();
+  const buildExitCode = await runEasBuild('dev_self_contained', ['--local']);
+  if (buildExitCode !== 0) return buildExitCode;
+
+  const ipa = await findMostRecentIpa(startedAt);
+  if (!ipa) {
+    console.warn('\n⚠️  Build succeeded, but no new IPA was found in the project. Use the artifact path printed by EAS above.');
+    return 0;
+  }
+
+  console.log('\n📦 New development IPA:');
+  printIpaDetails(ipa);
+  console.log('\n📲 Install on your iPhone with Expo Orbit:');
+  console.log('   1. Plug in the iPhone (USB) and unlock it. Enable Developer Mode in');
+  console.log('      Settings → Privacy & Security → Developer Mode.');
+  console.log('   2. Pick the device in the Orbit menu bar app.');
+  console.log('   3. Drag the .ipa onto the Orbit menu bar icon (or choose "Select build from local file").');
+  console.log('   If the phone is not registered, run `bun run wizard register-device`,');
+  console.log('   then rebuild so its UDID is included in the provisioning profile.');
+
+  if (await confirm('Open it in Expo Orbit now? (Y/n)', true)) {
+    let opened = false;
+    try {
+      opened = await executeCommand(['open', '-a', 'Expo Orbit', ipa.filePath]) === 0;
+    } catch {
+      // A missing opener is handled the same way as a failed application handoff.
+    }
+    if (!opened) {
+      console.warn('\n⚠️  Could not open the IPA in Expo Orbit. Revealing it in Finder so you can drag it into Orbit.');
+      try {
+        if (await executeCommand(['open', '-R', ipa.filePath]) !== 0) {
+          console.warn(`   Open Finder manually and locate: ${ipa.filePath}`);
+        }
+      } catch {
+        console.warn(`   Open Finder manually and locate: ${ipa.filePath}`);
+      }
+    } else {
+      console.log('   Sent to Expo Orbit. If it does not show the build, use "Select build from local file" with the path above.');
+    }
+  }
+  return 0;
 }
 
 async function startExpoServer(): Promise<number> {
@@ -162,7 +258,7 @@ async function startExpoServer(): Promise<number> {
   console.log('🚀 Starting Expo server...\n');
 
   const expoProc = spawn({
-    cmd: ["sh", "-c", "npx expo start"],
+    cmd: ["sh", "-c", "bunx expo start"],
     stdout: "inherit",
     stderr: "inherit",
     stdin: "inherit",
@@ -225,19 +321,21 @@ const BUILD_OPTIONS: BuildOption[] = [
   {
     name: "EAS Build Dev",
     flag: "eas-build-dev",
-    command: "eas build --platform ios --profile dev_self_contained --non-interactive",
+    command: "",
     description: "Build iOS app with dev_self_contained profile",
+    customHandler: easBuildDev,
   },
   {
     name: "EAS Build Dev Local",
     flag: "eas-build-dev-local",
-    command: "eas build --platform ios --profile dev_self_contained --non-interactive --local",
+    command: "",
     description: "Build iOS app locally with dev_self_contained profile",
+    customHandler: easBuildDevLocal,
   },
   {
     name: "EAS Update Dev",
     flag: "eas-update-dev",
-    command: 'eas update --platform ios --branch dev_self_contained --message "Update"',
+    command: 'bunx eas update --platform ios --branch dev_self_contained --message "Update"',
     description: "Push an OTA update to dev_self_contained branch",
   },
   {
@@ -249,21 +347,22 @@ const BUILD_OPTIONS: BuildOption[] = [
   {
     name: "EAS Build Prod",
     flag: "eas-build-prod",
-    command: "eas build --platform ios --profile production --non-interactive && eas submit --platform ios",
-    description: "Build and submit iOS app to App Store",
+    command: "",
+    description: "Build and submit iOS app to TestFlight / App Store",
+    customHandler: easBuildProd,
   },
   {
     name: "EAS Build Prod Local",
     flag: "eas-build-prod-local",
     command: "",
-    description: "Build IPA locally with Distribution profile, then submit to App Store",
+    description: "Build IPA locally with Distribution profile, then submit to TestFlight / App Store",
     customHandler: easBuildProdLocal,
   },
   {
     name: "EAS Submit Local IPA",
     flag: "eas-submit-local-ipa",
     command: "",
-    description: "Find the most recent local IPA and submit it to the App Store",
+    description: "Find the most recent local IPA and submit it to TestFlight / App Store",
     customHandler: easSubmitLocalIpa,
   },
   {
@@ -287,24 +386,58 @@ const BUILD_OPTIONS: BuildOption[] = [
   },
 ];
 
-async function executeCommand(command: string): Promise<number> {
-  console.log(`\n🚀 Executing: ${command}\n`);
+type Command = string | string[];
+interface CommandResult {
+  exitCode: number;
+  output: string;
+  interrupted: boolean;
+}
+
+export function executeCommand(command: Command, options: { captureOutput: true }): Promise<CommandResult>;
+export function executeCommand(command: Command): Promise<number>;
+export async function executeCommand(
+  command: Command,
+  options?: { captureOutput: true },
+): Promise<number | CommandResult> {
+  console.log(`\n🚀 Executing: ${typeof command === 'string' ? command : command.map((arg) => /\s/.test(arg) ? JSON.stringify(arg) : arg).join(' ')}\n`);
 
   const proc = spawn({
-    cmd: ["sh", "-c", command],
-    stdout: "inherit",
-    stderr: "inherit",
+    cmd: typeof command === 'string' ? ["sh", "-c", command] : command,
+    stdout: options?.captureOutput ? "pipe" : "inherit",
+    stderr: options?.captureOutput ? "pipe" : "inherit",
     stdin: "inherit",
+    env: options?.captureOutput ? { ...process.env, FORCE_COLOR: '1' } : process.env,
   });
+
+  const outputLimit = 64 * 1024;
+  let outputTail = Buffer.alloc(0);
+  const forward = async (stream: ReadableStream<Uint8Array>, destination: NodeJS.WriteStream) => {
+    const reader = stream.getReader();
+    try {
+      while (true) {
+        const { done, value: chunk } = await reader.read();
+        if (done) break;
+        outputTail = Buffer.from(Buffer.concat([outputTail, chunk]).subarray(-outputLimit));
+        await new Promise<void>((resolve, reject) => {
+          destination.write(chunk, (error) => error ? reject(error) : resolve());
+        });
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  };
 
   // Set up signal handlers to forward signals to child process
   let isShuttingDown = false;
+  let shutdownTimer: ReturnType<typeof setTimeout> | undefined;
+  let interruptedExitCode: number | undefined;
 
   const shutdownHandler = (signal: NodeJS.Signals) => {
     if (isShuttingDown) {
       return;
     }
     isShuttingDown = true;
+    interruptedExitCode = signal === 'SIGINT' ? 130 : 143;
 
     console.log(`\n\n⚠️  Received ${signal}, shutting down command gracefully...`);
 
@@ -312,8 +445,8 @@ async function executeCommand(command: string): Promise<number> {
     proc.kill(signal);
 
     // Give it 2 seconds to clean up, then force kill if needed
-    setTimeout(() => {
-      if (!proc.killed) {
+    shutdownTimer = setTimeout(() => {
+      if (proc.exitCode === null && proc.signalCode === null) {
         console.log('\n⚠️  Process did not exit cleanly, force killing...');
         proc.kill('SIGKILL');
       }
@@ -327,13 +460,21 @@ async function executeCommand(command: string): Promise<number> {
   process.on('SIGINT', sigintHandler);
   process.on('SIGTERM', sigtermHandler);
 
-  const exitCode = await proc.exited;
-
-  // Clean up signal handlers
-  process.off('SIGINT', sigintHandler);
-  process.off('SIGTERM', sigtermHandler);
-
-  return exitCode;
+  try {
+    const [exitCode] = await Promise.all([
+      proc.exited,
+      options?.captureOutput && proc.stdout ? forward(proc.stdout, process.stdout) : undefined,
+      options?.captureOutput && proc.stderr ? forward(proc.stderr, process.stderr) : undefined,
+    ]);
+    const commandExitCode = interruptedExitCode ?? exitCode;
+    return options?.captureOutput
+      ? { exitCode: commandExitCode, output: outputTail.toString('utf8'), interrupted: isShuttingDown || proc.signalCode !== null }
+      : commandExitCode;
+  } finally {
+    clearTimeout(shutdownTimer);
+    process.off('SIGINT', sigintHandler);
+    process.off('SIGTERM', sigtermHandler);
+  }
 }
 
 function showMenu(): void {
@@ -425,7 +566,9 @@ async function main(): Promise<void> {
   await executeChoice(choice);
 }
 
-main().catch((err) => {
-  console.error(`\n❌ ${err.message}`);
-  process.exit(1);
-});
+if (import.meta.main) {
+  main().catch((err) => {
+    console.error(`\n❌ ${err.message}`);
+    process.exit(1);
+  });
+}
