@@ -52,16 +52,14 @@ export const REALTIME_VOICES: VoiceOption[] = [
 ];
 
 // Live voice catalog: https://developers.openai.com/api/docs/guides/live-conversations
-// Arbor remains subject to the real-device acceptance gate in the rollout plan.
 export const LIVE_VOICES: VoiceOption[] = [
-  { value: "arbor", label: "Arbor", description: "Default Live voice" },
+  { value: "meridian", label: "Meridian", description: "North American, masculine" },
   { value: "quartz", label: "Quartz", description: "Australian, feminine" },
   { value: "ripple", label: "Ripple", description: "Australian, masculine" },
   { value: "vesper", label: "Vesper", description: "British, masculine" },
   { value: "willow", label: "Willow", description: "Irish, feminine" },
   { value: "stone", label: "Stone", description: "Irish, masculine" },
   { value: "gleam", label: "Gleam", description: "North American, feminine" },
-  { value: "meridian", label: "Meridian", description: "North American, masculine" },
   { value: "bossa", label: "Bossa", description: "Brazilian Portuguese, feminine" },
   { value: "tempo", label: "Tempo", description: "Brazilian Portuguese, masculine" },
   { value: "beacon", label: "Beacon", description: "Filipino, masculine" },

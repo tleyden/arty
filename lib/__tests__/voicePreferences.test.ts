@@ -56,9 +56,9 @@ describe("voice model preferences", () => {
 });
 
 describe("voices saved per model family", () => {
-  test("uses cedar for Realtime and arbor for Live", async () => {
-    expect(await loadVoicePreference("gpt-realtime-2")).toBe(DEFAULT_VOICE);
-    expect(await loadVoicePreference("gpt-live-1")).toBe(DEFAULT_LIVE_VOICE);
+  test("uses cedar for Realtime and meridian for Live", async () => {
+    expect(await loadVoicePreference("gpt-realtime-2")).toBe("cedar");
+    expect(await loadVoicePreference("gpt-live-1")).toBe("meridian");
   });
   test("preserves the existing Realtime storage key", async () => {
     storage.set("@vibemachine/voicePreference", "marin");
@@ -80,7 +80,16 @@ describe("voices saved per model family", () => {
     expect(await loadVoicePreference("gpt-realtime-2")).toBe(DEFAULT_VOICE);
     expect(await loadVoicePreference("gpt-live-1")).toBe(DEFAULT_LIVE_VOICE);
     await saveVoicePreference("gpt-live-1", "cedar");
-    expect(storage.get("@vibemachine/liveVoicePreference")).toBe("removed-voice");
+    expect(storage.get("@vibemachine/liveVoicePreference")).toBe("meridian");
+  });
+  test("migrates saved Arbor to Meridian without changing the Realtime voice", async () => {
+    storage.set("@vibemachine/liveVoicePreference", "arbor");
+    storage.set("@vibemachine/voicePreference", "cedar");
+    expect(await loadVoicePreference("gpt-live-1")).toBe("meridian");
+    expect(storage.get("@vibemachine/liveVoicePreference")).toBe("meridian");
+    expect(storage.get("@vibemachine/voicePreference")).toBe("cedar");
+    await saveVoicePreference("gpt-live-1", "arbor");
+    expect(storage.get("@vibemachine/liveVoicePreference")).toBe("meridian");
   });
   test("storage failure retains valid family defaults", async () => {
     storageFails = true;
@@ -92,7 +101,8 @@ describe("voices saved per model family", () => {
     const live = getVoiceOptions("gpt-live-1").map(({ value }) => value);
     const realtime = getVoiceOptions("gpt-realtime-2.1").map(({ value }) => value);
     expect(live).toContain(DEFAULT_LIVE_VOICE);
-    expect(live).not.toContain("cedar");
+    expect(live).not.toContain("arbor");
+    for (const voice of realtime) expect(live).not.toContain(voice);
     expect(realtime).toContain(DEFAULT_VOICE);
     expect(realtime).not.toContain("arbor");
   });

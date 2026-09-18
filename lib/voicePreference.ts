@@ -3,7 +3,7 @@ import { isLiveModel } from "./realtimeModelPreference";
 import { getVoiceOptions } from "./voiceOptions";
 
 export const DEFAULT_VOICE = "cedar";
-export const DEFAULT_LIVE_VOICE = "arbor";
+export const DEFAULT_LIVE_VOICE = "meridian";
 const storageKey = (model: string) => isLiveModel(model)
   ? "@vibemachine/liveVoicePreference"
   : "@vibemachine/voicePreference";
@@ -12,10 +12,17 @@ const defaultVoice = (model: string) =>
 
 export const loadVoicePreference = async (model: string): Promise<string> => {
   try {
-    const stored = await AsyncStorage.getItem(storageKey(model));
-    return stored && getVoiceOptions(model).some(({ value }) => value === stored)
-      ? stored
-      : defaultVoice(model);
+    const key = storageKey(model);
+    const stored = await AsyncStorage.getItem(key);
+    if (stored && getVoiceOptions(model).some(({ value }) => value === stored)) {
+      return stored;
+    }
+    const fallback = defaultVoice(model);
+    if (stored && isLiveModel(model)) {
+      // Replace removed Live voices, including Arbor, in saved preferences.
+      await AsyncStorage.setItem(key, fallback);
+    }
+    return fallback;
   } catch {
     return defaultVoice(model);
   }

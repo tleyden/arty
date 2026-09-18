@@ -2,7 +2,7 @@
 
 Date: 2026-09-18. Status: Live integration implemented; real-iPhone acceptance and the final default-switch commit are pending.
 
-**Decided:** backend `gpt-5.6-terra` · default Live voice `arbor` (to be verified, see below) · one PR.
+**Decided:** backend `gpt-5.6-terra` · default Live voice `meridian` (session creation verified) · one PR.
 
 Reviewed against the original proposal in [gpt_live_1_default_plan_original.md](gpt_live_1_default_plan_original.md). This version keeps its correct core and cuts the parts that are more ceremony than this app needs.
 
@@ -23,7 +23,7 @@ Reviewed against the original proposal in [gpt_live_1_default_plan_original.md](
 | Context | app deletes/compacts items | Live compacts itself at 90% of 128k |
 | Cost | per-token audio/text | $0.05/min voice billed per second (`session.usage.updated`, final in `session.closed`) + backend tokens |
 | Close | tear down peer connection | send `session.close`, wait for `session.closed` |
-| Voices | `cedar` (app default), `marin`, `alloy`, ... | a different set. The sessions guide lists quartz, ripple, vesper, willow, stone, gleam, meridian, bossa, tempo, beacon, delta, cinder. `arbor` is not in that table (see *Voices per model* below) |
+| Voices | `cedar` (app default), `marin`, `alloy`, ... | the app's Live picker uses the sessions guide's 12 additional voices, with `meridian` as the app default |
 
 Sources: [model page](https://developers.openai.com/api/docs/models/gpt-live-1), [WebRTC guide](https://developers.openai.com/api/docs/guides/voice-webrtc?api=live), [migration](https://developers.openai.com/api/docs/guides/live-migration), [delegation](https://developers.openai.com/api/docs/guides/live-delegation), [sessions](https://developers.openai.com/api/docs/guides/live-conversations), [cost](https://developers.openai.com/api/docs/guides/voice-latency-cost?api=live).
 
@@ -36,7 +36,7 @@ Sources: [model page](https://developers.openai.com/api/docs/models/gpt-live-1),
 - Don't auto-migrate users who explicitly picked a model.
 
 **Wrong or unverified:**
-- **The `marin` fallback isn't verified.** The Live sessions guide says "default is marin" but doesn't list `marin` among the Live voices. The app's default is `cedar`, which isn't a Live voice either. The voice picker needs a Live voice list, and the fallback should be a voice that's actually listed.
+- **Voice catalog:** the sessions guide lists additional Live voices; the full API schema also includes shared voices such as `marin` and `cedar`. The app's Live picker uses the 12 additional voices by product choice. A controlled API test rejected `arbor` with HTTP 403 and accepted `meridian` with HTTP 201 using the same key and offer.
 - **Mute** doesn't need new work beyond an optional nicety. Muting the local audio track already works. Live also has `session.input_audio.mute` if we want server-side confirmation.
 
 **Too much for this app:**
@@ -86,15 +86,14 @@ The voice list depends on the selected model.
 - `lib/voiceOptions.ts` holds `REALTIME_VOICES`, `LIVE_VOICES`, and `getVoiceOptions(model)`. Keeping these outside the component lets preferences validate the same lists without importing UI code. `ConfigureVoice` takes the selected model and renders its list.
 - **Save a voice per model family** so switching models never overwrites your other choice:
   - `@vibemachine/voicePreference` stays as the Realtime voice (default `cedar`).
-  - New `@vibemachine/liveVoicePreference` for the Live voice (default `arbor`).
+  - New `@vibemachine/liveVoicePreference` for the Live voice (default `meridian`).
   - `loadVoicePreference(model)` / `saveVoicePreference(model, voice)` choose the key.
-- If a saved value isn't in the current family's list (for example, a voice removed from the list later), fall back to that family's default.
-- **Live default `arbor`, to be verified.** OpenAI says Arbor is one of the ChatGPT voices remastered for the new GPT-Live models. But the Live sessions guide's voice table doesn't list it, and the guide's stated default, `marin`, isn't in the table either. The first device test is a Live session with `voice: "arbor"`. If `/v1/live/sessions` rejects it, change `DEFAULT_LIVE_VOICE` to `meridian` and drop Arbor from `LIVE_VOICES`.
-- `LIVE_VOICES` (from the guide's table, plus Arbor):
+- If a saved value isn't in the current family's list, fall back to that family's default. Persist the replacement for invalid Live selections, including saved Arbor, without changing the Realtime preference.
+- **Live default `meridian`.** Authenticated session creation succeeded with Meridian. Arbor reproduced the app's HTTP 403 "Voice session access denied" error and has been removed from the picker.
+- `LIVE_VOICES` (the 12 additional voices from the guide's table):
 
 | Voice | Accent | Presentation |
 |---|---|---|
-| arbor | (unlisted; verify) | |
 | quartz | Australian | Feminine |
 | ripple | Australian | Masculine |
 | vesper | British | Masculine |
@@ -180,7 +179,7 @@ The existing greeting code in `OpenAIWebRTCClient.handleDataChannelOpenAfterInit
 - `bunx tsc --noEmit`, lint, and a simulator build (wizard "Run Xcodebuild").
 - On a real iPhone:
   - first launch lands on Live
-  - `arbor` is accepted as the voice (otherwise switch to `meridian`)
+  - `meridian` connects and produces audio; a previously saved Arbor selection migrates to Meridian
   - voice picker shows the Live list on Live and the Realtime list on Realtime; switching models keeps each saved voice
   - greeting plays
   - two-way talk, including talking over the model
@@ -194,7 +193,7 @@ The existing greeting code in `OpenAIWebRTCClient.handleDataChannelOpenAfterInit
 ## Decisions (resolved)
 1. Backend model: **`gpt-5.6-terra`**, kept in one constant.
 2. Rollout: **one PR**, with the default flipped in the last commit after device testing.
-3. Live default voice: **`arbor`**, falling back to `meridian` if the API rejects it.
+3. Live default voice: **`meridian`**. Remove Arbor and retain only the 12 additional Live voices in the Live picker.
 
 ## Implementation and validation record (2026-09-18)
 
@@ -208,12 +207,12 @@ The existing greeting code in `OpenAIWebRTCClient.handleDataChannelOpenAfterInit
 - ESLint on changed TypeScript/TSX files: no errors; four existing warnings in `app/index.tsx` and `VmWebrtcModule.ts`.
 - Full `bun run lint`: blocked by six pre-existing errors in unchanged files (`OnboardingWizard`, `ConfigureChatMode`, `ConfigureTranslation`, `ConfigureVad`, `GithubConnectorConfig`, `ToolGroupList`).
 - `pod install --no-repo-update` refreshed the local Pods project to include the new Swift source. `bun run wizard build-ios-local`: simulator build passed, including an incremental rebuild after final native changes.
-- No authenticated Live API calls or real-phone acceptance checks have run. Arbor remains unverified. An iPhone 15 Pro is paired, but audible greeting, two-way audio, interruption, tool execution, and regression checks require the phone session below.
+- Subsequent phone testing reproduced HTTP 403 with Arbor. Controlled authenticated requests with the same API key and WebRTC offer returned HTTP 201 for the API default and Meridian, and HTTP 403 for Arbor. Both successful test sessions were immediately closed. Full Meridian audio, greeting, interruption, tool execution, and regression checks remain pending on the phone.
 
 ### Remaining phone acceptance and final commit
 
 1. Install a native build containing these changes, for example with `bun run wizard eas-build-dev-local` and the wizard's Expo Orbit instructions. An OTA update alone cannot add the native Live client.
-2. In **Advanced Configuration → Choose Model**, select **GPT-Live 1**. Leave the Live voice at **Arbor** and start a session. If the API rejects Arbor specifically, change `DEFAULT_LIVE_VOICE` to `meridian`, remove Arbor from `LIVE_VOICES`.
+2. In **Advanced Configuration → Choose Model**, select **GPT-Live 1**. Confirm the Live voice is **Meridian** (including migration from a previously saved Arbor selection), then start a session.
 3. Complete the phone checks listed above, including a GitHub or Drive tool round trip and final usage after hangup. Record the result before changing the default.
 4. In the last commit, set `DEFAULT_REALTIME_MODEL` to `gpt-live-1`, update the model descriptions, rerun preference tests, and verify a fresh installation selects Live while existing saved models remain selected.
 5. Keep the feature and default-switch commits in the same PR.
