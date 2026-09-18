@@ -726,6 +726,43 @@ extension OpenAIWebRTCBase {
         return answer
     }
 
+    func exchangeSDPWithLive(
+        apiKey: String, endpointURL: URL, offerSDP: String, session: [String: Any]
+    ) async throws -> (sessionId: String, answerSDP: String) {
+        let body: [String: Any] = [
+            "session": session, "transport": ["type": "webrtc", "sdp": offerSDP],
+        ]
+        var request = URLRequest(url: endpointURL)
+        request.httpMethod = "POST"
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        logger.log("[Live] Creating session", attributes: logAttributes(for: .debug, metadata: body))
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw OpenAIWebRTCError.openAIResponseDecoding
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            let responseBody = String(data: data, encoding: .utf8) ?? "<non_utf8_response_body>"
+            logger.log("[Live] Session rejected", attributes: logAttributes(for: .error, metadata: [
+                "status": http.statusCode, "responseBody": responseBody,
+            ]))
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            let error = json?["error"] as? [String: Any]
+            throw NSError(domain: "OpenAILive", code: http.statusCode, userInfo: [
+                NSLocalizedDescriptionKey: "GPT-Live connection rejected (\(http.statusCode)): \(error?["message"] as? String ?? "Check model access and voice selection.")",
+            ])
+        }
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let resultSession = json["session"] as? [String: Any], let id = resultSession["id"] as? String,
+            let transport = json["transport"] as? [String: Any], let sdp = transport["sdp"] as? String,
+            !id.isEmpty, !sdp.isEmpty else { throw OpenAIWebRTCError.openAIResponseDecoding }
+        logger.log("[Live] Session created", attributes: logAttributes(for: .debug, metadata: [
+            "sessionId": id, "answerSDP": sdp,
+        ]))
+        return (id, sdp)
+    }
+
     func exchangeRealtimeCallWithOpenAI(
         apiKey: String,
         endpointURL: URL,
@@ -1165,6 +1202,8 @@ extension OpenAIWebRTCBase: RTCPeerConnectionDelegate {
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
+            guard self.peerConnection === peerConnection else { return }
+            self.connectionStateDidChange(newState)
             guard let continuation = self.connectionContinuation else { return }
 
             switch newState {

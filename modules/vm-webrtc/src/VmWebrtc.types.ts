@@ -216,6 +216,9 @@ export async function exportToolDefinitions(
 
 export type OpenAIConnectionOptions = BaseOpenAIConnectionOptions & {
   instructions: string;
+  muted?: boolean;
+  backendInstructions?: string;
+  greetingLanguage?: string;
   toolDefinitions?: ToolDefinition[];
   vadMode?: VadMode;
   audioSpeed?: number;
@@ -243,6 +246,8 @@ export type IdleTimeoutEventPayload = {
 };
 
 export type TokenUsageEventPayload = {
+  liveSeconds?: number;
+  liveBackend?: import("../../../lib/tokenUsageTracker").TokenUsage["liveBackend"];
   inputText?: number;
   inputAudio?: number;
   outputText?: number;
@@ -268,6 +273,9 @@ export type RealtimeErrorEventPayload = {
 export type AudioMetricsEventPayload = Record<string, unknown>;
 
 export type TranscriptEventPayload = {
+  role?: "user" | "assistant";
+  startMs?: number;
+  endMs?: number;
   type: "audio_transcript" | "text";
   transcript?: string;
   delta?: string;
@@ -303,5 +311,6 @@ export type VmWebrtcModuleEvents = {
   onAudioMetrics: (params: AudioMetricsEventPayload) => void;
   onTranscript: (params: TranscriptEventPayload) => void;
   onOutboundAudioStats: (params: OutboundAudioStatsEventPayload) => void;
+  onVoiceSessionClosed: (params: { reason: string }) => void;
   onVoiceSessionStatus: (params: VoiceSessionStatusEventPayload) => void;
 };

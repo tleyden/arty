@@ -7,6 +7,7 @@ import { log } from "../../lib/logger";
 
 interface AdvancedConfigurationSheetProps {
   visible: boolean;
+  isLive: boolean;
   onClose: () => void;
   onConfigureMainPrompt: () => void;
   onConfigureModel: () => void;
@@ -36,6 +37,7 @@ export const AdvancedConfigurationSheet: React.FC<
   AdvancedConfigurationSheetProps
 > = ({
   visible,
+  isLive,
   onClose,
   onConfigureMainPrompt,
   onConfigureModel,
@@ -96,7 +98,7 @@ export const AdvancedConfigurationSheet: React.FC<
     {
       id: "model",
       title: "Choose Model",
-      subtitle: "Select which realtime voice model new sessions use.",
+      subtitle: "Select which voice model new sessions use.",
       onPress: () => {
         onClose();
         onConfigureModel();
@@ -147,6 +149,9 @@ export const AdvancedConfigurationSheet: React.FC<
       isDanger: true,
     },
   ];
+  const visibleActions = actions.filter(
+    (action) => !isLive || !["vad", "contextWindow", "transcription"].includes(action.id),
+  );
 
   return (
     <BottomSheet
@@ -159,7 +164,7 @@ export const AdvancedConfigurationSheet: React.FC<
           Tune advanced settings to tailor Vibemachine for your iOS sessions.
         </Text>
         <View style={styles.actionList}>
-          {actions.map((action) => (
+          {visibleActions.map((action) => (
             <Pressable
               key={action.id}
               accessibilityRole="button"

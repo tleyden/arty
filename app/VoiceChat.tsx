@@ -12,12 +12,14 @@ import {
 import { MiniVisualizer } from "../components/AudioVisualizer";
 import { MuteToggle } from "../components/MuteToggle";
 import { SpeakerModeToggle } from "../components/SpeakerModeToggle";
+import { VoiceSessionCost, type LiveSessionCost } from "../components/VoiceSessionCost";
 import VoiceSessionStatus from "../components/VoiceSessionStatus";
 import { VoiceSpeedCustomization } from "../components/VoiceSpeedCustomization";
 import { loadShowRealtimeErrorAlerts } from "../lib/developerSettings";
 import { log } from "../lib/logger";
+import { composeLivePrompts } from "../lib/livePrompt";
 import { composeMainPrompt } from "../lib/mainPrompt";
-import { type RealtimeModel } from "../lib/realtimeModelPreference";
+import { isLiveModel, type RealtimeModel } from "../lib/realtimeModelPreference";
 import { getUserFacingRealtimeErrorMessage } from "../lib/realtimeUserError";
 import { TokenUsageTracker } from "../lib/tokenUsageTracker";
 import { loadTranscriptionPreference } from "../lib/transcriptionPreference";
@@ -48,6 +50,8 @@ type VoiceChatProps = {
   baseConnectionOptions: BaseOpenAIConnectionOptions | null;
   hasMicPermission: boolean;
   permissionError: string | null;
+  preferencesReady: boolean;
+  onSelectModel: (model: RealtimeModel) => void;
   selectedRealtimeModel: RealtimeModel;
   selectedVoice: string;
   selectedVadMode: VadMode;
@@ -62,6 +66,8 @@ export function VoiceChat({
   baseConnectionOptions,
   hasMicPermission,
   permissionError,
+  preferencesReady,
+  onSelectModel,
   selectedRealtimeModel,
   selectedVoice,
   selectedVadMode,
@@ -80,6 +86,7 @@ export function VoiceChat({
   const [isMuted, setIsMuted] = useState(false);
   const tokenUsageTracker = useRef(new TokenUsageTracker());
   const [sessionCostUsd, setSessionCostUsd] = useState(0);
+  const [liveCost, setLiveCost] = useState<LiveSessionCost | null>(null);
   const [isSessionCostAvailable, setIsSessionCostAvailable] = useState(
     TokenUsageTracker.hasPricingForModel(selectedRealtimeModel),
   );
@@ -121,6 +128,8 @@ export function VoiceChat({
           outputText: payload.outputText ?? 0,
           outputAudio: payload.outputAudio ?? 0,
           cachedInput: payload.cachedInput ?? 0,
+          liveSeconds: payload.liveSeconds,
+          liveBackend: payload.liveBackend,
         });
 
         log.info(
@@ -133,6 +142,14 @@ export function VoiceChat({
         );
         setIsSessionCostAvailable(totals.hasPricing);
         setSessionCostUsd(totals.totalUSD);
+        if (payload.liveSeconds !== undefined || payload.liveBackend) {
+          setLiveCost({
+            seconds: totals.liveSeconds,
+            voice: totals.voiceUSD,
+            backend: totals.backendUSD,
+            backendPriced: totals.hasBackendPricing,
+          });
+        }
       },
     );
 
@@ -297,6 +314,17 @@ export function VoiceChat({
     };
   }, []);
 
+  useEffect(() => {
+    const subscription = VmWebrtcModule?.addListener?.("onVoiceSessionClosed", ({ reason }) => {
+      emitVoiceSessionStatus(reason === "connection_lost" ? "Connection lost" : "Session ended");
+      setIsSessionActive(false);
+      setIsStopping(false);
+      setIsConnecting(false);
+      setFrequencyBins([]);
+    });
+    return () => subscription?.remove?.();
+  }, []);
+
   // Monitor app state changes to log background behavior during active sessions
   useEffect(() => {
     const subscription = AppState.addEventListener(
@@ -375,6 +403,8 @@ export function VoiceChat({
       return;
     }
 
+    if (!preferencesReady) return;
+
     // Set connecting state immediately so button updates right away
     const sessionModel = selectedRealtimeModel;
     tokenUsageTracker.current.setModel(sessionModel);
@@ -383,6 +413,9 @@ export function VoiceChat({
     setIsConnecting(true);
     setIsSessionActive(false);
     setSessionCostUsd(0);
+    setLiveCost(isLiveModel(sessionModel)
+      ? { seconds: 0, voice: 0, backend: 0, backendPriced: true }
+      : null);
 
     try {
       // Get Gen2 toolkit definitions (same source as TextChat for consistency)
@@ -394,7 +427,9 @@ export function VoiceChat({
 
       // Inject language preference into the prompt (always specify language, including English)
       const languageInstruction = `\n\nIMPORTANT: Please respond in ${selectedLanguage || "English"}. All your responses should be in ${selectedLanguage || "English"} unless the user explicitly requests otherwise.`;
-      const finalPrompt = resolvedPrompt + languageInstruction;
+      const live = isLiveModel(sessionModel);
+      const livePrompts = composeLivePrompts(mainPromptAddition, selectedLanguage);
+      const finalPrompt = live ? livePrompts.voiceInstructions : resolvedPrompt + languageInstruction;
 
       // Load transcription preference from storage
       const transcriptionEnabled = await loadTranscriptionPreference();
@@ -420,13 +455,20 @@ export function VoiceChat({
         model: sessionModel,
         voice: selectedVoice,
         audioOutput,
+        muted: isMuted,
         instructions: finalPrompt,
-        vadMode: selectedVadMode,
-        audioSpeed: voiceSpeed,
-        maxConversationTurns,
-        retentionRatio,
-        disableCompaction,
-        transcriptionEnabled,
+        ...(live ? {
+          baseUrl: undefined,
+          backendInstructions: livePrompts.backendInstructions,
+          greetingLanguage: selectedLanguage || "English",
+        } : {
+          vadMode: selectedVadMode,
+          audioSpeed: voiceSpeed,
+          maxConversationTurns,
+          retentionRatio,
+          disableCompaction,
+          transcriptionEnabled,
+        }),
         toolDefinitions,
       };
 
@@ -536,7 +578,11 @@ export function VoiceChat({
       // Emit error status
       emitVoiceSessionStatus(`Connection failed: ${message}`);
 
-      Alert.alert("VmWebrtc", message);
+      Alert.alert(isLiveModel(sessionModel) ? "GPT-Live Connection Failed" : "VmWebrtc", message,
+        isLiveModel(sessionModel) ? [
+          { text: "Cancel", style: "cancel" },
+          { text: "Switch to GPT Realtime 2", onPress: () => onSelectModel("gpt-realtime-2") },
+        ] : [{ text: "OK" }]);
       setIsSessionActive(false);
       setFrequencyBins([]);
     } finally {
@@ -558,6 +604,9 @@ export function VoiceChat({
     disableCompaction,
     selectedLanguage,
     selectedRealtimeModel,
+    preferencesReady,
+    onSelectModel,
+    isMuted,
   ]);
 
   const handleStopVoiceSession = useCallback(async () => {
@@ -600,6 +649,7 @@ export function VoiceChat({
         error instanceof Error ? error.message : "Unexpected error";
       Alert.alert("VmWebrtc", message);
     } finally {
+      emitVoiceSessionStatus("Session ended");
       setIsStopping(false);
       setIsSessionActive(false);
       setIsConnecting(false);
@@ -655,8 +705,8 @@ export function VoiceChat({
   const isSpeakerphone = audioOutput === "speakerphone";
 
   const isSessionButtonDisabled = useMemo(
-    () => (isSessionActive ? isStopping : isConnecting || !hasMicPermission),
-    [isConnecting, isSessionActive, isStopping, hasMicPermission],
+    () => (isSessionActive ? isStopping : isConnecting || !hasMicPermission || !preferencesReady),
+    [isConnecting, isSessionActive, isStopping, hasMicPermission, preferencesReady],
   );
 
   const sessionButtonLabel = useMemo(() => {
@@ -686,11 +736,6 @@ export function VoiceChat({
     }
     return base;
   }, [isSessionActive, isSessionButtonDisabled]);
-
-  const formattedSessionCost = useMemo(() => {
-    const roundedUp = Math.ceil(sessionCostUsd * 100) / 100;
-    return roundedUp.toFixed(2);
-  }, [sessionCostUsd]);
 
   const shouldShowSessionCost = useMemo(() => {
     if (!isSessionCostAvailable) {
@@ -788,15 +833,12 @@ export function VoiceChat({
         <Text style={styles.permissionWarning}>{permissionError}</Text>
       ) : null}
 
-      {shouldShowSessionCost ? (
-        <View pointerEvents="none" style={styles.sessionCostContainer}>
-          <Text
-            style={styles.sessionCostText}
-          >{`💵 $${formattedSessionCost}`}</Text>
-        </View>
-      ) : null}
-
-      <VoiceSessionStatus />
+      <View style={styles.sessionFooter}>
+        <VoiceSessionStatus inline />
+        {shouldShowSessionCost ? (
+          <VoiceSessionCost totalUSD={sessionCostUsd} live={liveCost} />
+        ) : null}
+      </View>
     </View>
   );
 }
@@ -916,17 +958,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: "center",
   },
-  sessionCostContainer: {
+  sessionFooter: {
     position: "absolute",
     bottom: 32,
     left: 16,
     right: 16,
     alignItems: "center",
-  },
-  sessionCostText: {
-    fontSize: 24,
-    fontWeight: "600",
-    color: "#1C1C1E",
-    textAlign: "center",
+    gap: 8,
   },
 });

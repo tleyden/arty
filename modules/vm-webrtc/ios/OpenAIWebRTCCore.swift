@@ -171,6 +171,10 @@ class OpenAIWebRTCBase: NSObject {
     /// Called for every parsed data channel message. Subclass routes to its event handler.
     func handleDataChannelMessage(_ event: [String: Any]) {}
 
+    /// Lets session protocols handle terminal transport failures after startup.
+    @MainActor
+    func connectionStateDidChange(_ state: RTCIceConnectionState) {}
+
     /// Called by inbound audio monitor when remote speaking activity is detected.
     func recordRemoteSpeakingActivity() {}
 

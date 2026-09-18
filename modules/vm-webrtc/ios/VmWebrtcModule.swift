@@ -15,10 +15,19 @@ struct OpenAIConnectionOptions: Record {
     var audioOutput: String?
 
     @Field
+    var muted: Bool?
+
+    @Field
     var instructions: String
 
     @Field
     var voice: String?
+
+    @Field
+    var backendInstructions: String?
+
+    @Field
+    var greetingLanguage: String?
 
     @Field
     var toolDefinitions: [[String: Any]]?
@@ -44,6 +53,7 @@ struct OpenAIConnectionOptions: Record {
 
 public class VmWebrtcModule: Module {
     private lazy var webrtcClient = OpenAIWebRTCClient()
+    private var liveClient: OpenAILiveWebRTCClient?
     private var toolGithubConnector: ToolGithubConnector?
     // Add GDrive connector tool instance
     private var toolGDriveConnector: ToolGDriveConnector?
@@ -53,6 +63,55 @@ public class VmWebrtcModule: Module {
     private var toolkitHelper: ToolkitHelper?
     private let logfireTracingManager = LogfireTracingManager()
     private var logger: NativeLogger { VmWebrtcLogging.logger }
+
+    private func configureTools(responder: ToolCallResponder, live: OpenAILiveWebRTCClient? = nil) {
+        toolGithubConnector = ToolGithubConnector(module: self, responder: responder)
+        toolGDriveConnector = ToolGDriveConnector(module: self, responder: responder)
+        toolGPT5GDriveFixer = ToolGPT5GDriveFixer(module: self, responder: responder)
+        toolGPT5WebSearch = ToolGPT5WebSearch(module: self, responder: responder)
+        toolkitHelper = ToolkitHelper(module: self, responder: responder)
+        if let live {
+            live.toolDelegates = [
+                "github_connector": toolGithubConnector!, "gdrive_connector": toolGDriveConnector!,
+                "GPT5-gdrive-fixer": toolGPT5GDriveFixer!, "GPT5-web-search": toolGPT5WebSearch!,
+            ]
+            live.toolkitHelper = toolkitHelper
+        } else {
+            webrtcClient.setGithubConnectorDelegate(toolGithubConnector!)
+            webrtcClient.setGDriveConnectorDelegate(toolGDriveConnector!)
+            webrtcClient.setGPT5GDriveFixerDelegate(toolGPT5GDriveFixer!)
+            webrtcClient.setGPT5WebSearchDelegate(toolGPT5WebSearch!)
+            webrtcClient.setToolkitHelper(toolkitHelper!)
+        }
+    }
+
+    @MainActor
+    private func openVoiceConnection(_ options: OpenAIConnectionOptions) async throws -> String {
+        if let liveClient { _ = await liveClient.closeGracefully() }
+        liveClient = nil
+        if webrtcClient.peerConnection != nil { _ = webrtcClient.closeConnection() }
+        if options.model == "gpt-live-1" {
+            let client = OpenAILiveWebRTCClient()
+            client.setEventEmitter { [weak self] name, payload in self?.sendEvent(name, payload) }
+            client.setAPIKey(options.apiKey)
+            client.setOutgoingAudioMuted(options.muted ?? false)
+            liveClient = client
+            configureTools(responder: client, live: client)
+            return try await client.openConnection(options: options)
+        }
+        configureTools(responder: webrtcClient)
+        webrtcClient.setToolDefinitions(options.toolDefinitions ?? [])
+        webrtcClient.setAPIKey(options.apiKey)
+        webrtcClient.setOutgoingAudioMuted(options.muted ?? false)
+        return try await webrtcClient.openConnection(
+            model: options.model, baseURL: options.baseUrl,
+            audioOutput: AudioOutputPreference(rawValue: options.audioOutput ?? "handset") ?? .handset,
+            instructions: options.instructions, voice: options.voice, vadMode: options.vadMode,
+            audioSpeed: options.audioSpeed, maxConversationTurns: options.maxConversationTurns,
+            retentionRatio: options.retentionRatio, disableCompaction: options.disableCompaction,
+            transcriptionEnabled: options.transcriptionEnabled ?? false
+        )
+    }
 
     public func helloFromExpoModule() -> String {
         return "Hello world from module"
@@ -91,7 +150,10 @@ public class VmWebrtcModule: Module {
             "onTokenUsage",
             "onRealtimeError",
             "onAudioMetrics",
-            "onVoiceSessionStatus"
+            "onVoiceSessionStatus",
+            "onVoiceSessionClosed",
+            "onTranscript",
+            "onOutboundAudioStats"
         )
 
         // Initialize native tool delegates used by the module
@@ -103,61 +165,8 @@ public class VmWebrtcModule: Module {
                 self.sendEvent(eventName, payload)
             }
             self.logger.log("Event emitter configured for OpenAI WebRTC client")
-            // Initialize github connector tool
-            self.toolGithubConnector = ToolGithubConnector(
-                module: self, responder: self.webrtcClient)
-            let githubInitialized = self.toolGithubConnector != nil
-            self.logger.log("ToolGithubConnector initialized = \(githubInitialized)")
+            self.configureTools(responder: self.webrtcClient)
 
-            // Initialize gdrive connector tool
-            self.toolGDriveConnector = ToolGDriveConnector(
-                module: self, responder: self.webrtcClient)
-            let gdriveInitialized = self.toolGDriveConnector != nil
-            self.logger.log("ToolGDriveConnector initialized = \(gdriveInitialized)")
-
-            // Initialize GPT5 gdrive fixer tool
-            self.toolGPT5GDriveFixer = ToolGPT5GDriveFixer(
-                module: self, responder: self.webrtcClient)
-            let fixerInitialized = self.toolGPT5GDriveFixer != nil
-            self.logger.log("ToolGPT5GDriveFixer initialized = \(fixerInitialized)")
-
-            // Initialize GPT5 web search tool
-            self.toolGPT5WebSearch = ToolGPT5WebSearch(module: self, responder: self.webrtcClient)
-            let webSearchInitialized = self.toolGPT5WebSearch != nil
-            self.logger.log("ToolGPT5WebSearch initialized = \(webSearchInitialized)")
-
-            // Initialize Gen2 toolkit helper
-            self.toolkitHelper = ToolkitHelper(module: self, responder: self.webrtcClient)
-            let toolkitInitialized = self.toolkitHelper != nil
-            self.logger.log("ToolkitHelper initialized = \(toolkitInitialized)")
-
-            // Wire delegates into the WebRTC client
-            self.webrtcClient.setGithubConnectorDelegate(self.toolGithubConnector!)
-            if let gdrive = self.toolGDriveConnector {
-                self.webrtcClient.setGDriveConnectorDelegate(gdrive)
-                self.logger.log("Delegate set: gdrive")
-            } else {
-                self.logger.log("Delegate set NOT: gdrive")
-            }
-            if let fixer = self.toolGPT5GDriveFixer {
-                self.webrtcClient.setGPT5GDriveFixerDelegate(fixer)
-                self.logger.log("Delegate set: GPT5 fixer")
-            } else {
-                self.logger.log("Delegate set NOT: GPT5 fixer")
-            }
-            if let webSearch = self.toolGPT5WebSearch {
-                self.webrtcClient.setGPT5WebSearchDelegate(webSearch)
-                self.logger.log("Delegate set: GPT5 web search")
-            } else {
-                self.logger.log("Delegate set NOT: GPT5 web search")
-            }
-            if let toolkit = self.toolkitHelper {
-                self.webrtcClient.setToolkitHelper(toolkit)
-                self.logger.log("Delegate set: Toolkit helper")
-            } else {
-                self.logger.log("Delegate set NOT: Toolkit helper")
-            }
-            self.logger.log("Delegates set: github, possibly GDrive, toolkit")
         }
 
         // Defines a JavaScript synchronous function that runs the native code on the JavaScript thread.
@@ -192,9 +201,6 @@ public class VmWebrtcModule: Module {
                     "toolDefinitionCount": options.toolDefinitions?.count ?? 0,
                     "transcriptionEnabled": options.transcriptionEnabled ?? false,
                 ])
-            let outputPreference =
-                AudioOutputPreference(rawValue: options.audioOutput ?? "handset") ?? .handset
-
             let sanitizedInstructions = options.instructions
                 .trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -208,33 +214,14 @@ public class VmWebrtcModule: Module {
                 )
             }
 
-            let toolDefinitions = options.toolDefinitions ?? []
-            await MainActor.run {
-                self.webrtcClient.setToolDefinitions(toolDefinitions)
-                self.webrtcClient.setAPIKey(options.apiKey)
-            }
-
-            let state = try await self.webrtcClient.openConnection(
-                model: options.model,
-                baseURL: options.baseUrl,
-                audioOutput: outputPreference,
-                instructions: sanitizedInstructions,
-                voice: options.voice,
-                vadMode: options.vadMode,
-                audioSpeed: options.audioSpeed,
-                maxConversationTurns: options.maxConversationTurns,
-                retentionRatio: options.retentionRatio,
-                disableCompaction: options.disableCompaction,
-                transcriptionEnabled: options.transcriptionEnabled ?? false
-            )
-            return state
+            return try await self.openVoiceConnection(options)
         }
 
         AsyncFunction("closeOpenAIConnectionAsync") { () -> String in
-            let state = await MainActor.run {
-                self.webrtcClient.closeConnection()
+            if let client = await MainActor.run(body: { self.liveClient }) {
+                return await client.closeGracefully()
             }
-            return state
+            return await MainActor.run { self.webrtcClient.closeConnection() }
         }
 
         AsyncFunction("initializeLogfireTracing") { (serviceName: String, apiKey: String) in
@@ -266,7 +253,9 @@ public class VmWebrtcModule: Module {
                     "requestId": requestId,
                     "result_length": result.count,
                 ])
-            self.toolGithubConnector?.handleResponse(requestId: requestId, result: result)
+            Task { @MainActor in
+                self.toolGithubConnector?.handleResponse(requestId: requestId, result: result)
+            }
         }
 
         // Add: JavaScript calls this to send GDrive connector result back
@@ -278,7 +267,9 @@ public class VmWebrtcModule: Module {
                     "result_length": result.count,
                     "result_preview": String(result.prefix(1000)),
                 ])
-            self.toolGDriveConnector?.handleResponse(requestId: requestId, result: result)
+            Task { @MainActor in
+                self.toolGDriveConnector?.handleResponse(requestId: requestId, result: result)
+            }
         }
 
         Function("sendGPT5GDriveFixerResponse") { (requestId: String, result: String) in
@@ -288,7 +279,9 @@ public class VmWebrtcModule: Module {
                     "requestId": requestId,
                     "result_length": result.count,
                 ])
-            self.toolGPT5GDriveFixer?.handleResponse(requestId: requestId, result: result)
+            Task { @MainActor in
+                self.toolGPT5GDriveFixer?.handleResponse(requestId: requestId, result: result)
+            }
         }
 
         Function("sendGPT5WebSearchResponse") { (requestId: String, result: String) in
@@ -298,7 +291,9 @@ public class VmWebrtcModule: Module {
                     "requestId": requestId,
                     "result_length": result.count,
                 ])
-            self.toolGPT5WebSearch?.handleResponse(requestId: requestId, result: result)
+            Task { @MainActor in
+                self.toolGPT5WebSearch?.handleResponse(requestId: requestId, result: result)
+            }
         }
 
         Function("sendToolkitResponse") { (requestId: String, result: String) in
@@ -309,7 +304,9 @@ public class VmWebrtcModule: Module {
                     "result_length": result.count,
                     "result": result,
                 ])
-            self.toolkitHelper?.handleResponse(requestId: requestId, result: result)
+            Task { @MainActor in
+                self.toolkitHelper?.handleResponse(requestId: requestId, result: result)
+            }
         }
 
         // Github Connector function - calls JavaScript github connector via events
@@ -341,7 +338,8 @@ public class VmWebrtcModule: Module {
 
         Function("muteUnmuteOutgoingAudio") { (shouldMute: Bool) in
             Task { @MainActor in
-                self.webrtcClient.setOutgoingAudioMuted(shouldMute)
+                let client: OpenAIWebRTCBase = self.liveClient ?? self.webrtcClient
+                client.setOutgoingAudioMuted(shouldMute)
             }
         }
 

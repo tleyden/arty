@@ -57,6 +57,7 @@ import { log } from "../lib/logger";
 import { loadMainPromptAddition } from "../lib/mainPrompt";
 import {
   DEFAULT_REALTIME_MODEL,
+  isLiveModel,
   loadRealtimeModelPreference,
   saveRealtimeModelPreference,
   type RealtimeModel,
@@ -75,6 +76,7 @@ import {
 } from "../lib/vadPreference";
 import {
   DEFAULT_VOICE,
+  DEFAULT_LIVE_VOICE,
   loadVoicePreference,
   saveVoicePreference,
 } from "../lib/voicePreference";
@@ -135,7 +137,13 @@ export default function Index() {
     useState<BaseOpenAIConnectionOptions | null>(null);
   const [selectedRealtimeModel, setSelectedRealtimeModel] =
     useState<RealtimeModel>(DEFAULT_REALTIME_MODEL);
-  const [selectedVoice, setSelectedVoice] = useState(DEFAULT_VOICE);
+  const [voices, setVoices] = useState({
+    realtime: DEFAULT_VOICE,
+    live: DEFAULT_LIVE_VOICE,
+  });
+  const [voicePreferencesReady, setVoicePreferencesReady] = useState(false);
+  const voiceFamily = isLiveModel(selectedRealtimeModel) ? "live" : "realtime";
+  const selectedVoice = voices[voiceFamily];
   const [voiceSheetVisible, setVoiceSheetVisible] = useState(false);
   const [selectedVadMode, setSelectedVadMode] =
     useState<VadMode>(DEFAULT_VAD_MODE);
@@ -238,42 +246,19 @@ export default function Index() {
   useEffect(() => {
     let isMounted = true;
 
-    const hydrateRealtimeModelPreference = async () => {
-      const stored = await loadRealtimeModelPreference();
-      if (!isMounted) {
-        return;
-      }
-      setSelectedRealtimeModel(stored);
-      log.info(
-        "Realtime model preference loaded from storage",
-        {},
-        {
-          model: stored,
-        },
-      );
+    const hydrateVoicePreferences = async () => {
+      const [model, realtime, live] = await Promise.all([
+        loadRealtimeModelPreference(),
+        loadVoicePreference("gpt-realtime-2"),
+        loadVoicePreference("gpt-live-1"),
+      ]);
+      if (!isMounted) return;
+      setSelectedRealtimeModel(model);
+      setVoices({ realtime, live });
+      setVoicePreferencesReady(true);
+      log.info("Voice preferences loaded", {}, { model, realtime, live });
     };
-
-    hydrateRealtimeModelPreference();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    const hydrateVoicePreference = async () => {
-      const stored = await loadVoicePreference();
-      if (!isMounted) {
-        return;
-      }
-      setSelectedVoice(stored);
-      log.info("Voice preference loaded from storage", {}, { voice: stored });
-    };
-
-    hydrateVoicePreference();
-
+    void hydrateVoicePreferences();
     return () => {
       isMounted = false;
     };
@@ -433,11 +418,11 @@ export default function Index() {
   }, []);
 
   const handleSelectVoice = useCallback((voice: string) => {
-    setSelectedVoice(voice);
-    void saveVoicePreference(voice);
+    setVoices((current) => ({ ...current, [voiceFamily]: voice }));
+    void saveVoicePreference(selectedRealtimeModel, voice);
     log.info("Voice preference updated and saved", {}, { voice });
     setVoiceSheetVisible(false);
-  }, []);
+  }, [selectedRealtimeModel, voiceFamily]);
 
   const handleSelectRealtimeModel = useCallback((model: RealtimeModel) => {
     setSelectedRealtimeModel(model);
@@ -662,6 +647,8 @@ export default function Index() {
         baseConnectionOptions={baseConnectionOptions}
         hasMicPermission={hasMicPermission}
         permissionError={permissionError}
+        preferencesReady={voicePreferencesReady}
+        onSelectModel={handleSelectRealtimeModel}
         selectedRealtimeModel={selectedRealtimeModel}
         selectedVoice={selectedVoice}
         selectedVadMode={selectedVadMode}
@@ -689,7 +676,8 @@ export default function Index() {
         onSelectSection={handleSelectMenuSection}
       />
       <ConfigureVoice
-        visible={voiceSheetVisible}
+        model={selectedRealtimeModel}
+        visible={voiceSheetVisible && voicePreferencesReady}
         selectedVoice={selectedVoice}
         onSelectVoice={handleSelectVoice}
         onClose={() => setVoiceSheetVisible(false)}
@@ -713,6 +701,7 @@ export default function Index() {
         onClose={() => setLanguageSheetVisible(false)}
       />
       <AdvancedConfigurationSheet
+        isLive={isLiveModel(selectedRealtimeModel)}
         visible={advancedConfigVisible}
         onClose={() => setAdvancedConfigVisible(false)}
         onConfigureMainPrompt={() => {
@@ -742,7 +731,7 @@ export default function Index() {
         onClose={() => setTranscriptionSheetVisible(false)}
       />
       <ConfigureRealtimeModel
-        visible={realtimeModelSheetVisible}
+        visible={realtimeModelSheetVisible && voicePreferencesReady}
         selectedModel={selectedRealtimeModel}
         onSelectModel={handleSelectRealtimeModel}
         onClose={() => setRealtimeModelSheetVisible(false)}
