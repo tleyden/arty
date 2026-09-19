@@ -3,12 +3,11 @@
     "owner": "tleyden",
     "name": "vibemachine",
     "slug": "vibemachine",
-    "version": "0.3.4",
+    "version": "0.3.5",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "vibemachine",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.tleyden.vibemachine",
@@ -27,7 +26,6 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.tleyden.vibemachine"
     },
@@ -66,7 +64,10 @@
       ],
       "expo-secure-store",
       "expo-web-browser",
-      "expo-font"
+      "expo-font",
+      "expo-image",
+      "expo-sharing",
+      "expo-status-bar"
     ],
     "experiments": {
       "typedRoutes": true,
@@ -78,7 +79,7 @@
         "projectId": "f3a6322c-ba58-4e74-902e-89a4d9fccb52"
       }
     },
-    "runtimeVersion": "0.3.4",
+    "runtimeVersion": "0.3.5",
     "updates": {
       "url": "https://u.expo.dev/f3a6322c-ba58-4e74-902e-89a4d9fccb52"
     }

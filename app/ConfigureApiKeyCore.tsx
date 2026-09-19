@@ -340,7 +340,7 @@ export const ConfigureApiKeyCore: React.FC<ConfigureApiKeyCoreProps> = ({
       {scannerVisible && (
         <View style={styles.scannerOverlay}>
           <CameraView
-            style={StyleSheet.absoluteFillObject}
+            style={StyleSheet.absoluteFill}
             onBarcodeScanned={
               scanningRef.current ? undefined : handleBarcodeScanned
             }

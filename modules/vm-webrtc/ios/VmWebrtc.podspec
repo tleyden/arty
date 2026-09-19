@@ -7,7 +7,7 @@ Pod::Spec.new do |s|
   s.homepage       = 'https://docs.expo.dev/modules/'
 
   # Restrict to iOS; WebRTC-lib omits tvOS slices
-  s.platforms      = { :ios => '15.1' }
+  s.platforms      = { :ios => '16.4' }
 
   s.source         = { git: '' }
   s.static_framework = true

@@ -377,9 +377,9 @@ export const GDriveConnectorConfigCore: React.FC<
 
   // Helper to generate a secure random "ya29." token (with 32-byte hex string)
   async function generateSecureRandomToken(): Promise<string> {
-    // Use expo-random for cryptographically secure PRNG in React Native/Expo
+    // Use expo-crypto for cryptographically secure PRNG in React Native/Expo
     // Generates 32 random bytes and encodes as hex
-    const { getRandomBytesAsync } = await import("expo-random");
+    const { getRandomBytesAsync } = await import("expo-crypto");
     const bytes = await getRandomBytesAsync(32);
     // Convert bytes to hex string
     const hex = Array.from(bytes)
