@@ -31,7 +31,7 @@ export const ConfigureRealtimeModel: React.FC<ConfigureRealtimeModelProps> = ({
         showsVerticalScrollIndicator={false}
       >
         <Text style={styles.lead}>
-          Choose which realtime voice model powers new iOS voice sessions.
+          Choose which voice model powers new iOS voice sessions.
         </Text>
         <View style={styles.optionList}>
           {models.map((model) => {

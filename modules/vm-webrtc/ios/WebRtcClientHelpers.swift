@@ -726,6 +726,117 @@ extension OpenAIWebRTCBase {
         return answer
     }
 
+    @MainActor
+    func exchangeSDPWithLive(
+        apiKey: String, endpointURL: URL, offerSDP: String, session: [String: Any]
+    ) async throws -> (sessionId: String, answerSDP: String) {
+        let body: [String: Any] = [
+            "session": session, "transport": ["type": "webrtc", "sdp": offerSDP],
+        ]
+        var request = URLRequest(url: endpointURL)
+        request.httpMethod = "POST"
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        let requestId = UUID().uuidString
+        let startedAt = ProcessInfo.processInfo.systemUptime
+        let requestMetadata: [String: Any] = [
+            "clientRequestId": requestId,
+            "endpoint": endpointURL.absoluteString,
+            "requestMethod": "POST",
+            "requestContentType": "application/json",
+            "timeoutSeconds": request.timeoutInterval,
+        ]
+        var creationMetadata = requestMetadata
+        creationMetadata.merge(body) { _, value in value }
+        logger.log("[Live] Creating session", attributes: logAttributes(for: .info, metadata: creationMetadata))
+
+        let pendingWarning = Task { @MainActor in
+            do { try await Task.sleep(nanoseconds: 10_000_000_000) } catch { return }
+            guard !Task.isCancelled else { return }
+            var metadata = requestMetadata
+            metadata["elapsedMs"] = Int((ProcessInfo.processInfo.systemUptime - startedAt) * 1_000)
+            self.logger.log("[Live] Still waiting for session response after 10 seconds",
+                attributes: logAttributes(for: .warn, metadata: metadata))
+        }
+        defer { pendingWarning.cancel() }
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            pendingWarning.cancel()
+            let failure = error as NSError
+            var metadata = requestMetadata
+            metadata["elapsedMs"] = Int((ProcessInfo.processInfo.systemUptime - startedAt) * 1_000)
+            metadata["errorDomain"] = failure.domain
+            metadata["errorCode"] = failure.code
+            metadata["errorMessage"] = failure.localizedDescription
+            logger.log("[Live] Session request failed before receiving a complete response: \(failure.localizedDescription)",
+                attributes: logAttributes(for: .error, metadata: metadata))
+            throw error
+        }
+        pendingWarning.cancel()
+
+        let responseBody = String(data: data, encoding: .utf8) ?? "<non_utf8_response_body>"
+        var responseMetadata = requestMetadata
+        responseMetadata["elapsedMs"] = Int((ProcessInfo.processInfo.systemUptime - startedAt) * 1_000)
+        responseMetadata["responseBody"] = responseBody
+        responseMetadata["responseBytes"] = data.count
+        responseMetadata["responseURL"] = response.url?.absoluteString ?? ""
+        guard let http = response as? HTTPURLResponse else {
+            logger.log("[Live] Session response missing HTTP status",
+                attributes: logAttributes(for: .error, metadata: responseMetadata))
+            throw OpenAIWebRTCError.openAIResponseDecoding
+        }
+        responseMetadata["status"] = http.statusCode
+        responseMetadata["serverRequestId"] = http.value(forHTTPHeaderField: "x-request-id") ?? ""
+        // Keep diagnostic headers without logging cookies or authentication headers.
+        for header in ["content-type", "openai-processing-ms", "openai-version", "retry-after", "cf-ray"] {
+            if let value = http.value(forHTTPHeaderField: header) {
+                responseMetadata[header] = value
+            }
+        }
+        logger.log("[Live] Session response received (HTTP \(http.statusCode))",
+            attributes: logAttributes(for: .info, metadata: responseMetadata))
+        guard (200..<300).contains(http.statusCode) else {
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            let error = json?["error"] as? [String: Any]
+            let errorMessage = error?["message"] as? String ?? "Check model access and voice selection."
+            responseMetadata["errorMessage"] = errorMessage
+            responseMetadata["errorCode"] = error?["code"]
+            responseMetadata["errorType"] = error?["type"]
+            responseMetadata["errorParam"] = error?["param"]
+            logger.log("[Live] Session rejected (HTTP \(http.statusCode)): \(errorMessage)",
+                attributes: logAttributes(for: .error, metadata: responseMetadata))
+            throw NSError(domain: "OpenAILive", code: http.statusCode, userInfo: [
+                NSLocalizedDescriptionKey: "GPT-Live connection rejected (\(http.statusCode)): \(errorMessage)",
+            ])
+        }
+        let jsonObject: Any
+        do {
+            jsonObject = try JSONSerialization.jsonObject(with: data)
+        } catch {
+            responseMetadata["errorMessage"] = error.localizedDescription
+            logger.log("[Live] Session response contains invalid JSON: \(error.localizedDescription)",
+                attributes: logAttributes(for: .error, metadata: responseMetadata))
+            throw error
+        }
+        guard let json = jsonObject as? [String: Any],
+            let resultSession = json["session"] as? [String: Any], let id = resultSession["id"] as? String,
+            let transport = json["transport"] as? [String: Any], let sdp = transport["sdp"] as? String,
+            !id.isEmpty, !sdp.isEmpty else {
+            logger.log("[Live] Session response missing session.id or transport.sdp",
+                attributes: logAttributes(for: .error, metadata: responseMetadata))
+            throw OpenAIWebRTCError.openAIResponseDecoding
+        }
+        responseMetadata["sessionId"] = id
+        responseMetadata["answerSDP"] = sdp
+        logger.log("[Live] Session created", attributes: logAttributes(for: .info, metadata: responseMetadata))
+        return (id, sdp)
+    }
+
     func exchangeRealtimeCallWithOpenAI(
         apiKey: String,
         endpointURL: URL,
@@ -1165,6 +1276,8 @@ extension OpenAIWebRTCBase: RTCPeerConnectionDelegate {
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
+            guard self.peerConnection === peerConnection else { return }
+            self.connectionStateDidChange(newState)
             guard let continuation = self.connectionContinuation else { return }
 
             switch newState {

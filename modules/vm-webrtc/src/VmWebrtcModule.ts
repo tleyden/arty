@@ -1,6 +1,8 @@
 import { NativeModule, requireOptionalNativeModule } from "expo";
 
 import { log } from "../../../lib/logger";
+import { isLiveModel } from "../../../lib/realtimeModelPreference";
+import { DEFAULT_LIVE_VOICE, DEFAULT_VOICE } from "../../../lib/voicePreference";
 import {
   createGithubConnectorTool,
   type GithubConnectorNativeModule,
@@ -103,9 +105,12 @@ export const openOpenAIConnectionAsync = async (
     throw makeUnavailableError();
   }
 
+  const live = isLiveModel(options.model ?? "");
   const trimmedVoice = options.voice?.trim();
   const resolvedVoice =
-    trimmedVoice && trimmedVoice.length > 0 ? trimmedVoice : "cedar";
+    trimmedVoice && trimmedVoice.length > 0
+      ? trimmedVoice
+      : live ? DEFAULT_LIVE_VOICE : DEFAULT_VOICE;
   const trimmedInstructions = options.instructions.trim();
   if (trimmedInstructions.length === 0) {
     throw new Error(
@@ -160,8 +165,8 @@ export const openOpenAIConnectionAsync = async (
     voice: resolvedVoice,
     instructions: trimmedInstructions,
     toolDefinitions: mergedToolDefinitions,
-    vadMode: resolvedVadMode,
-    audioSpeed: resolvedAudioSpeed,
+    vadMode: live ? undefined : resolvedVadMode,
+    audioSpeed: live ? undefined : resolvedAudioSpeed,
   };
 
   log.debug(

@@ -3,63 +3,15 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { BottomSheet } from "../ui/BottomSheet";
 
-export type VoiceOption = {
-  value: string;
-  label: string;
-  description: string;
-};
-
-export const VOICES: VoiceOption[] = [
-  { value: "alloy", label: "Alloy", description: "Balanced, clear (improved)" },
-  { value: "ash", label: "Ash", description: "Warm, friendly (improved)" },
-  {
-    value: "ballad",
-    label: "Ballad",
-    description: "Smooth, melodic (improved)",
-  },
-  {
-    value: "coral",
-    label: "Coral",
-    description: "Vibrant, energetic (improved)",
-  },
-  {
-    value: "echo",
-    label: "Echo",
-    description: "Calm, professional (improved)",
-  },
-  {
-    value: "sage",
-    label: "Sage",
-    description: "Thoughtful, steady (improved)",
-  },
-  {
-    value: "shimmer",
-    label: "Shimmer",
-    description: "Bright, cheerful (improved)",
-  },
-  {
-    value: "verse",
-    label: "Verse",
-    description: "Expressive, dynamic (improved)",
-  },
-  {
-    value: "cedar",
-    label: "Cedar",
-    description: "Natural, grounded (Realtime only)",
-  },
-  {
-    value: "marin",
-    label: "Marin",
-    description: "Expressive, conversational (Realtime only)",
-  },
-];
+import { getVoiceOptions } from "../../lib/voiceOptions";
+import type { RealtimeModel } from "../../lib/realtimeModelPreference";
 
 export interface ConfigureVoiceProps {
   visible: boolean;
   selectedVoice: string;
   onSelectVoice: (value: string) => void;
   onClose: () => void;
-  voices?: VoiceOption[];
+  model: RealtimeModel;
 }
 
 export const ConfigureVoice: React.FC<ConfigureVoiceProps> = ({
@@ -67,8 +19,9 @@ export const ConfigureVoice: React.FC<ConfigureVoiceProps> = ({
   selectedVoice,
   onSelectVoice,
   onClose,
-  voices = VOICES,
+  model,
 }) => {
+  const voices = getVoiceOptions(model);
   return (
     <BottomSheet visible={visible} onClose={onClose} title="Configure Voice">
       <ScrollView

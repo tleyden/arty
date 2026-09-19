@@ -1,5 +1,5 @@
 // tokenUsageTracker.ts
-// Tracks cumulative token usage + estimated cost for an OpenAI Realtime session.
+// Tracks estimated costs for Realtime tokens or Live duration plus backend tokens.
 
 export interface TokenUsage {
   inputText: number;
@@ -7,10 +7,21 @@ export interface TokenUsage {
   outputText: number;
   outputAudio: number;
   cachedInput?: number;
+  liveSeconds?: number;
+  liveBackend?: {
+    model: string;
+    inputTokens: number;
+    cachedInputTokens: number;
+    outputTokens: number;
+  };
 }
 
 export interface TokenTotals extends TokenUsage {
   cachedInput: number; // Make non-optional in totals since we always initialize it
+  liveSeconds: number;
+  voiceUSD: number;
+  backendUSD: number;
+  hasBackendPricing: boolean;
   totalUSD: number;
   hasPricing: boolean;
 }
@@ -66,13 +77,13 @@ export class TokenUsageTracker {
   private model: string;
   private totals: TokenTotals;
 
-  constructor(model = DEFAULT_PRICED_MODEL) {
+  constructor(model: string = DEFAULT_PRICED_MODEL) {
     this.model = model;
     this.totals = this.createEmptyTotals();
   }
 
-  static hasPricingForModel(_model: string): boolean {
-    return true;
+  static hasPricingForModel(model: string): boolean {
+    return model === "gpt-live-1" || Object.prototype.hasOwnProperty.call(PRICES, model);
   }
 
   hasPricing(): boolean {
@@ -85,6 +96,7 @@ export class TokenUsageTracker {
 
   /** Call this with each onTokenUsage event payload */
   addUsage(usage: TokenUsage): TokenTotals {
+    if (this.model === "gpt-live-1") return this.addLiveUsage(usage);
     this.totals.inputText += usage.inputText;
     this.totals.inputAudio += usage.inputAudio;
     this.totals.outputText += usage.outputText;
@@ -92,7 +104,8 @@ export class TokenUsageTracker {
     this.totals.cachedInput += usage.cachedInput ?? 0;
 
     const p = this.getPriceStructure();
-    this.totals.hasPricing = true;
+    this.totals.hasPricing = p !== undefined;
+    if (!p) return { ...this.totals };
 
     const cost =
       this.totals.inputText * p.inputText +
@@ -103,6 +116,35 @@ export class TokenUsageTracker {
 
     this.totals.totalUSD = parseFloat(cost.toFixed(6));
 
+    return { ...this.totals };
+  }
+
+  private addLiveUsage(usage: TokenUsage): TokenTotals {
+    if (usage.liveSeconds !== undefined && Number.isFinite(usage.liveSeconds)) {
+      // Live reports cumulative seconds; later and final snapshots replace the estimate.
+      this.totals.liveSeconds = Math.max(0, usage.liveSeconds);
+      this.totals.voiceUSD = this.totals.liveSeconds / 60 * 0.05;
+    }
+    const backend = usage.liveBackend;
+    if (backend) {
+      if (backend.model === "gpt-5.6-terra") {
+        // https://developers.openai.com/api/docs/models/gpt-5.6-terra
+        const longContext = backend.inputTokens > 272_000;
+        const cached = Math.min(backend.inputTokens, backend.cachedInputTokens);
+        this.totals.inputText += backend.inputTokens - cached;
+        this.totals.cachedInput += cached;
+        this.totals.outputText += backend.outputTokens;
+        this.totals.backendUSD += (
+          ((backend.inputTokens - cached) * 2 + cached * 0.2) * (longContext ? 2 : 1)
+          + backend.outputTokens * 12 * (longContext ? 1.5 : 1)
+        ) / 1_000_000;
+      } else {
+        this.totals.hasBackendPricing = false;
+      }
+    }
+    // An unknown backend makes the displayed estimate voice-only, never Realtime-priced.
+    this.totals.totalUSD = this.totals.voiceUSD +
+      (this.totals.hasBackendPricing ? this.totals.backendUSD : 0);
     return { ...this.totals };
   }
 
@@ -118,15 +160,19 @@ export class TokenUsageTracker {
       outputText: 0,
       outputAudio: 0,
       cachedInput: 0,
+      liveSeconds: 0,
+      voiceUSD: 0,
+      backendUSD: 0,
+      hasBackendPricing: true,
       totalUSD: 0,
       hasPricing: this.hasPricing(),
     };
   }
 
-  private getPriceStructure(): PriceStructure {
+  private getPriceStructure(): PriceStructure | undefined {
     if (Object.prototype.hasOwnProperty.call(PRICES, this.model)) {
       return PRICES[this.model as PricedModel];
     }
-    return PRICES[DEFAULT_PRICED_MODEL];
+    return undefined;
   }
 }

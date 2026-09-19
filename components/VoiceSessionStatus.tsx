@@ -5,7 +5,7 @@ import VmWebrtcModule, {
   type VoiceSessionStatusEventPayload,
 } from "../modules/vm-webrtc";
 
-export default function VoiceSessionStatus() {
+export default function VoiceSessionStatus({ inline = false }: { inline?: boolean }) {
   const [statusUpdate, setStatusUpdate] = useState<string>("Ready");
 
   useEffect(() => {
@@ -42,13 +42,16 @@ export default function VoiceSessionStatus() {
   log.debug("[VoiceSessionStatus] Rendering status:", {}, { statusUpdate });
 
   return (
-    <View style={styles.container}>
+    <View style={inline ? styles.inlineContainer : styles.container}>
       <Text style={styles.statusText}>{statusUpdate}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  inlineContainer: {
+    alignItems: "center",
+  },
   container: {
     position: "absolute",
     bottom: 70,

@@ -4,6 +4,8 @@ import { log } from "../../../../lib/logger";
 import { getApiKey } from "../../../../lib/secure-storage";
 import type { ToolSessionContext, ToolkitResult } from "./types";
 
+type ExpoFetchResponse = Awaited<ReturnType<typeof fetch>>;
+
 /**
  * Fetches a URL with SSRF protection, timeout, and content-type validation.
  * Performs URL parsing, protocol whitelist, private hostname blocking, and fetch with timeout.
@@ -15,7 +17,7 @@ import type { ToolSessionContext, ToolkitResult } from "./types";
 export async function fetchWithSsrfProtection(
   url: string,
   timeoutMs: number = 10000,
-): Promise<Response> {
+): Promise<ExpoFetchResponse> {
   // Validate URL format and protocol
   let parsedUrl: URL;
   try {
@@ -545,7 +547,7 @@ export async function web_search(
     },
   );
 
-  let response: Response;
+  let response: ExpoFetchResponse;
   try {
     response = await fetch(OPENAI_RESPONSES_URL, {
       method: "POST",
