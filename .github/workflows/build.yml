@@ -29,7 +29,7 @@ on:
   workflow_dispatch:
 
 env:
-  BUN_VERSION: "1.1.34"
+  BUN_VERSION: "1.3.4"
 
 jobs:
   detect-ios-build-changes:
@@ -59,6 +59,9 @@ jobs:
               - 'app.config.ts'
               - 'eas.json'
               - 'expo-env.d.ts'
+              - 'package.json'
+              - 'bun.lock'
+              - '.github/workflows/build.yml'
 
   typecheck:
     name: TypeScript (tsc --noEmit)
@@ -79,13 +82,22 @@ jobs:
 
   ios-build:
     name: iOS Simulator Build
-    runs-on: macos-15
+    runs-on: macos-26
+    env:
+      # Match the Xcode version used for the validated local SDK 57 build.
+      DEVELOPER_DIR: /Applications/Xcode_26.5.app/Contents/Developer
     needs:
       - typecheck
       - detect-ios-build-changes
     if: ${{ needs.detect-ios-build-changes.outputs.ios_build == 'true' }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Verify Apple toolchain
+        run: |
+          xcodebuild -version
+          xcrun swift --version
+          xcrun --sdk iphonesimulator --show-sdk-version
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v1
@@ -104,7 +116,7 @@ jobs:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           EAS_LOCAL_BUILD_SKIP_GIT_CHECKS: "1"
         run: |
-          bunx eas-cli build --platform ios \
+          bunx --no-install eas build --platform ios \
             --profile ios-sim-ci \
             --local \
             --non-interactive

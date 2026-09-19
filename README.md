@@ -22,7 +22,7 @@
 
 **Requirements**
 
-* iOS - tested on ios 26, may work on earlier versions
+* iOS 16.4 or later - tested on iOS 26
 * Bring Your Own OpenAI API Key
 
 ## 📱 Screenshots
@@ -63,6 +63,8 @@
   <summary>Installation steps</summary>
 
 ### Clone project and install dependencies
+
+The app uses Expo SDK 57 and requires Xcode 26.4 or later to build for iOS.
 
 ```bash
 git clone https://github.com/vibemachine-labs/arty.git

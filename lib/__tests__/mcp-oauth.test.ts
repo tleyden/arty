@@ -10,6 +10,7 @@ const secureState = {
   clientSecret: null as string | null,
   refreshToken: null as string | null,
   tokenEndpoint: null as string | null,
+  resource: null as string | null,
   savedBearerTokens: [] as string[],
   savedClientIds: [] as { id: string; clientId: string }[],
   savedClientSecrets: [] as { id: string; clientSecret: string }[],
@@ -59,6 +60,7 @@ mock.module("../secure-storage", () => ({
   getMcpClientId: async () => secureState.clientId,
   getMcpClientSecret: async () => secureState.clientSecret,
   getMcpRefreshToken: async () => secureState.refreshToken,
+  getMcpResource: async () => secureState.resource,
   getMcpTokenEndpoint: async () => secureState.tokenEndpoint,
   saveMcpAuthMode: async (id: string, mode: string) => {
     secureState.savedAuthModes.push({ id, mode });
@@ -74,6 +76,9 @@ mock.module("../secure-storage", () => ({
   },
   saveMcpRefreshToken: async (_id: string, refreshToken: string) => {
     secureState.savedRefreshTokens.push(refreshToken);
+  },
+  saveMcpResource: async (_id: string, resource: string) => {
+    secureState.resource = resource;
   },
   saveMcpTokenEndpoint: async (id: string, tokenEndpoint: string) => {
     secureState.savedTokenEndpoints.push({ id, tokenEndpoint });
@@ -98,6 +103,13 @@ mock.module("../../modules/vm-webrtc/src/mcp_client/extensions", () => ({
   fetchOAuthServerMetadata: async () => extensionState.oauthMetadata,
   fetchResourceMetadata: async () => extensionState.resourceMetadata,
   registerOAuthClient: async () => ({ clientId: extensionState.registeredClientId }),
+}));
+
+// Hashing only creates log fingerprints here; keep native Expo modules out of
+// these deterministic OAuth tests.
+mock.module("expo-crypto", () => ({
+  CryptoDigestAlgorithm: { SHA256: "SHA-256" },
+  digestStringAsync: async () => "0".repeat(64),
 }));
 
 mock.module("expo-auth-session", () => ({
@@ -140,6 +152,7 @@ beforeEach(() => {
   secureState.clientSecret = null;
   secureState.refreshToken = null;
   secureState.tokenEndpoint = null;
+  secureState.resource = null;
   secureState.savedBearerTokens = [];
   secureState.savedClientIds = [];
   secureState.savedClientSecrets = [];
@@ -208,6 +221,7 @@ describe("performMcpOAuthFlow", () => {
       id: "extension-1",
       mode: "static",
     });
+    expect(secureState.resource).toBe("https://resource.example.com");
   });
 
   test("restores static client secrets for manual callback completion", async () => {
@@ -248,10 +262,11 @@ describe("refreshMcpAccessToken", () => {
     expect(token).toBe("refreshed-token");
     expect(authState.refreshCalls[0]).toMatchObject({
       clientId: "static-client-id",
-      clientSecret: "stored-static-secret",
+      extraParams: { client_secret: "stored-static-secret" },
       refreshToken: "stored-refresh-token",
       tokenEndpoint: "https://provider.example.com/token",
     });
+    expect(authState.refreshCalls[0]).not.toHaveProperty("clientSecret");
   });
 
   test("returns user-facing details and logs missing refresh prerequisites", async () => {
